@@ -20,6 +20,9 @@ marker4.txt
 probe4.txt
 sky-dump.json
 
+# Local product and development documentation
+docs/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
