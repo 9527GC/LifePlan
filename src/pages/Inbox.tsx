@@ -39,12 +39,14 @@ export default function Inbox() {
   return <div className="page">
     <header className="page-header inbox-header">
       <div className="page-header-top">
-        <Typography.Title level={2} className="page-title">事件篮</Typography.Title>
+        <div>
+          <Typography.Title level={2} className="page-title">事件篮</Typography.Title>
+          <Typography.Paragraph className="page-subtitle">先把脑中的事情放进来，再决定下一步怎么处理。</Typography.Paragraph>
+        </div>
         <Form className="quick-add" onFinish={() => void addEvent()}>
           <Input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="记录一个新事件…" addonAfter={<Button type="primary" htmlType="submit" disabled={!newTitle.trim()} icon={<Plus size={15} />}>新增事件</Button>} />
         </Form>
       </div>
-      <Typography.Paragraph className="page-subtitle">先把脑中的事情放进来，再决定下一步怎么处理。</Typography.Paragraph>
     </header>
     <Tabs className="inbox-tabs" activeKey={filter} onChange={(key) => setFilter(key as InboxTab)} items={[{ key: "pending", label: `待处理 ${counts.pending}` }, { key: "projects", label: `进行中 ${counts.projects}` }, { key: "delegated", label: `已委托 ${counts.delegated}` }, { key: "delayed", label: `延迟 ${counts.delayed}` }, { key: "abandoned", label: `已放弃 ${counts.abandoned}` }, { key: "completed", label: `已完成 ${counts.completed}` }]} />
     {error && <Alert className="page-alert" type="error" showIcon message={error} closable onClose={() => setError("")} />}
