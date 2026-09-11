@@ -588,8 +588,8 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn { min-width: 0
 
 
 
-.daily-review-cell.empty { justify-content: center; padding: 5px 8px; }
-.daily-review-cell.empty .daily-review-placeholder { display: flex; flex: 1 1 auto; align-items: center; justify-content: center; box-sizing: border-box; width: auto; min-width: 0; height: 30px; margin-left: 0; border: 1px dashed transparent; border-radius: 6px; color: #1778ff; opacity: 0; pointer-events: none; transition: opacity .15s ease, border-color .15s ease, background-color .15s ease; }
+.daily-review-cell.empty { justify-content: center; padding: 5px 8px 5px 2px; }
+.daily-review-cell.empty .daily-review-placeholder { display: flex; flex: 1 1 auto; align-items: center; justify-content: center; box-sizing: border-box; width: auto; min-width: 0; height: 30px; margin: 0 11px 0 0; border: 1px dashed transparent; border-radius: 6px; color: #1778ff; opacity: 0; pointer-events: none; transition: opacity .15s ease, border-color .15s ease, background-color .15s ease; }
 .daily-review-cell.empty:hover .daily-review-placeholder { border-color: #91caff; background: #f0f7ff; opacity: 1; pointer-events: auto; }
 .daily-review-toast .ant-message-notice-content { background: #fff; color: #303133; box-shadow: 0 4px 14px rgba(0, 0, 0, .12); }
 
