@@ -226,15 +226,42 @@ pub fn update_action(state: State<'_, AppState>, payload: UpdateAction) -> Resul
     };
     let sort_order = if let Some(project_id) = project_id {
         if previous_start_date != payload.start_date.as_deref() {
-            Some(
-                next_project_date_sort_order(
-                    &conn,
-                    project_id,
-                    &space_id,
-                    payload.start_date.as_deref(),
+            // 补充开始日期时，只有日期破坏了当前相邻行动的时间顺序才重新定位。
+            // 日期位于当前顺序允许的区间内时，保留原 sort_order，避免行动被无谓挪动。
+            let current_sort_order: i64 = conn
+                .query_row(
+                    "SELECT COALESCE(sort_order, 0) FROM actions WHERE id = ?1 AND project_id = ?2 AND space_id = ?3 AND deleted_at IS NULL",
+                    params![payload.id, project_id, space_id],
+                    |row| row.get(0),
                 )
-                .map_err(|error| error.to_string())?,
-            )
+                .map_err(|error| error.to_string())?;
+            let previous_date: Option<String> = conn
+                .query_row(
+                    "SELECT start_date FROM actions WHERE project_id = ?1 AND space_id = ?2 AND deleted_at IS NULL AND id <> ?3 AND sort_order < ?4 ORDER BY sort_order DESC, id DESC LIMIT 1",
+                    params![project_id, space_id, payload.id, current_sort_order],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            let next_date: Option<String> = conn
+                .query_row(
+                    "SELECT start_date FROM actions WHERE project_id = ?1 AND space_id = ?2 AND deleted_at IS NULL AND id <> ?3 AND sort_order > ?4 ORDER BY sort_order, id LIMIT 1",
+                    params![project_id, space_id, payload.id, current_sort_order],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            let new_date = payload.start_date.as_deref();
+            let fits_previous = previous_date.as_deref().is_none_or(|date| new_date.is_none_or(|value| date <= value));
+            let fits_next = next_date.as_deref().is_none_or(|date| new_date.is_none_or(|value| value <= date));
+            if fits_previous && fits_next {
+                None
+            } else {
+                Some(
+                    next_project_date_sort_order(&conn, project_id, &space_id, new_date)
+                        .map_err(|error| error.to_string())?,
+                )
+            }
         } else {
             None
         }

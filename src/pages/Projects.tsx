@@ -25,8 +25,7 @@ const actionDateKey = (action: Action) => action.start_date ?? "9999-12-31";
 
 const sortProjectActions = (actions: Action[]) => {
   return [...actions].sort((left, right) => {
-    const dateOrder = actionDateKey(left).localeCompare(actionDateKey(right));
-    if (dateOrder !== 0) return dateOrder;
+    // 项目行动的手动顺序优先于开始日期，避免给未设置日期的行动补日期时被日期排序拆散。
     const leftOrder = (left.sort_order ?? 0) > 0 ? left.sort_order : Number.MAX_SAFE_INTEGER;
     const rightOrder = (right.sort_order ?? 0) > 0 ? right.sort_order : Number.MAX_SAFE_INTEGER;
     if (leftOrder !== rightOrder) return leftOrder - rightOrder;
