@@ -55,7 +55,7 @@ impl AppState {
             backup::create_migration_backup(&db_path)?;
         }
 
-        let is_new_database = match run_migrations(&mut conn) {
+        match run_migrations(&mut conn) {
             Ok(value) => value,
             Err(error) if needs_migration => {
                 let failure_copy = backup::preserve_failed_database(&db_path, now_millis());
@@ -78,10 +78,7 @@ impl AppState {
             Err(error) => return Err(error),
         };
 
-        let space_id = ensure_current_space(&mut conn)?;
-        if is_new_database {
-            ensure_example_data(&mut conn, &space_id)?;
-        }
+        ensure_current_space(&mut conn)?;
 
         Ok(Self {
             db: Mutex::new(conn),
@@ -797,57 +794,6 @@ pub fn ensure_current_space(conn: &mut Connection) -> Result<String, DbError> {
     tx.commit()
         .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
     Ok(space_id)
-}
-
-fn ensure_example_data(conn: &mut Connection, space_id: &str) -> Result<(), DbError> {
-    let event_count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM events WHERE space_id = ?1 AND deleted_at IS NULL",
-            [space_id],
-            |row| row.get(0),
-        )
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    if event_count > 0 {
-        return Ok(());
-    }
-    let now = now_millis();
-    let tx = conn
-        .transaction()
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    tx.execute(
-        "INSERT INTO events (space_id, sync_id, title, status, created_at, updated_at) VALUES (?1, ?2, ?3, 1, ?4, ?4)",
-        params![space_id, new_uuid(), "示例事件：本周个人学习计划", now],
-    )
-    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    let event_id = tx.last_insert_rowid();
-    tx.execute(
-        "INSERT INTO projects (space_id, sync_id, event_id, title, target, estimated_hours, importance, urgency, priority, status, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, 2, 1, 1, 4, 0, ?6, ?6)",
-        params![space_id, new_uuid(), event_id, "示例项目：完成本周学习计划", "用稳定的小步行动完成本周学习安排", now],
-    )
-    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    let project_id = tx.last_insert_rowid();
-    for (title, description, hours, importance, urgency, priority, status) in [
-        (
-            "整理本周学习主题",
-            Some("列出本周最重要的三个学习主题"),
-            0.5,
-            1,
-            1,
-            4,
-            1,
-        ),
-        ("完成第一节学习内容", None, 1.0, 1, 1, 4, 0),
-        ("记录学习复盘", None, 0.5, 0, 1, 2, 0),
-    ] {
-        tx.execute(
-            "INSERT INTO actions (space_id, sync_id, project_id, title, description, estimated_hours, importance, urgency, priority, status, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
-            params![space_id, new_uuid(), project_id, title, description, hours, importance, urgency, priority, status, now],
-        )
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    }
-    tx.commit()
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    Ok(())
 }
 
 pub fn with_conn<F, T>(state: &AppState, f: F) -> Result<T, DbError>
