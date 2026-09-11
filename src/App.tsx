@@ -16,7 +16,7 @@ export default function App() {
   const [notice, setNotice] = useState<StartupNotice | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState("");
-  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem("lifeplan-onboarding-completed") !== "1");
+  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem("lifeplan-onboarding-v1-completed") !== "1");
 
   useEffect(() => {
     const handleOpenOnboarding = () => setShowOnboarding(true);
