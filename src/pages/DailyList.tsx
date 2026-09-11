@@ -263,7 +263,17 @@ function ActionPickerModal({ slot, slots, actions, onGuideToInbox, onClose, onSt
 }
 function DailySlotModal({ slot, onClose, onSaved }: { slot: DailyScheduleSlot | null; onClose: () => void; onSaved: (slot: DailyScheduleSlot) => void }) {
   const [form] = Form.useForm(); const [saving, setSaving] = useState(false); const [completeAfterReview, setCompleteAfterReview] = useState(false);
-  useEffect(() => { if (slot) { setCompleteAfterReview(false); form.setFieldsValue({ actual_notes: slot.actual_notes || slot.action?.title || "", met_expectation: slot.met_expectation, focused: slot.focused }); } }, [slot, form]);
+  useEffect(() => {
+    if (!slot) return;
+    setCompleteAfterReview(false);
+    const isNewReview = slot.actual_notes === undefined && slot.met_expectation === undefined && slot.focused === undefined;
+    const defaultActualNotes = slot.action ? `${slot.action.project_title ? `${slot.action.project_title}-` : ""}${slot.action.title}` : "";
+    form.setFieldsValue({
+      actual_notes: isNewReview ? defaultActualNotes : slot.actual_notes,
+      met_expectation: isNewReview ? 1 : slot.met_expectation,
+      focused: isNewReview ? 1 : slot.focused,
+    });
+  }, [slot, form]);
   if (!slot) return null;
   const saveReview = async () => { try { setSaving(true); const values = await form.validateFields(["actual_notes", "met_expectation", "focused"]); let reviewed = await dailyScheduleApi.updateReview({ id: slot.id, actual_notes: String(values.actual_notes), met_expectation: Number(values.met_expectation) as 0 | 1, focused: Number(values.focused) as 0 | 1 }); track("完成每日复盘", { met_expectation: Number(values.met_expectation) === 1, focused: Number(values.focused) === 1 }); if (completeAfterReview && slot.action_id) { await actionsApi.complete(slot.action_id); const refreshed = await dailyScheduleApi.get(slot.list_date); reviewed = refreshed.slots.find((item) => item.id === slot.id) ?? reviewed; } onSaved(reviewed); onClose(); message.success(completeAfterReview ? "复盘已保存，行动已完成" : "复盘已保存"); } catch (cause) { if (cause && typeof cause === "object" && "errorFields" in cause) return; message.error(userFacingError(cause)); } finally { setSaving(false); setCompleteAfterReview(false); } };
   const restore = async () => { if (!slot.action_id) return; try { await actionsApi.restore(slot.action_id); const refreshed = await dailyScheduleApi.get(slot.list_date); onSaved(refreshed.slots.find((item) => item.id === slot.id) ?? slot); message.success("行动已恢复"); } catch (cause) { message.error(userFacingError(cause)); } };
