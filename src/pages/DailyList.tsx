@@ -266,7 +266,7 @@ function DailySlotModal({ slot, onClose, onSaved }: { slot: DailyScheduleSlot | 
   useEffect(() => {
     if (!slot) return;
     setCompleteAfterReview(false);
-    const isNewReview = slot.actual_notes === undefined && slot.met_expectation === undefined && slot.focused === undefined;
+    const isNewReview = slot.actual_notes == null && slot.met_expectation == null && slot.focused == null;
     const defaultActualNotes = slot.action ? `${slot.action.project_title ? `${slot.action.project_title}-` : ""}${slot.action.title}` : "";
     form.setFieldsValue({
       actual_notes: isNewReview ? defaultActualNotes : slot.actual_notes,
@@ -308,6 +308,8 @@ function NewActionForm({ onSubmit }: { onSubmit: (payload: NewAction) => Promise
   const [form] = Form.useForm();
   return <Form id="daily-new-action-form" form={form} className="form daily-new-action-form" layout="vertical" onFinish={(values) => void onSubmit({ title: String(values.title), estimated_hours: Number(values.estimated_hours), start_date: values.start_date ? (values.start_date as Dayjs).format("YYYY-MM-DD") : undefined, deadline: values.deadline ? (values.deadline as Dayjs).format("YYYY-MM-DD") : undefined, is_frog: values.is_frog ? 1 : 0, importance: Number(values.importance), urgency: Number(values.urgency) })}><Form.Item name="title" label="行动标题" rules={[{ required: true, message: "请输入行动标题" }]}><Input autoFocus /></Form.Item><div className="form-grid action-modal-grid"><Form.Item name="estimated_hours" label="预计耗时" initialValue={0.5} rules={[{ required: true }]}><Select options={[{ value: 0.5, label: "30 分钟" }, { value: 1, label: "1 小时" }, { value: 1.5, label: "1.5 小时" }, { value: 2, label: "2 小时" }]} /></Form.Item><Form.Item name="start_date" label="开始日期"><DatePicker className="full-width" format="YYYY-MM-DD" /></Form.Item><Form.Item name="deadline" label="截止日期"><DatePicker className="full-width" format="YYYY-MM-DD" /></Form.Item></div><div className="form-grid action-priority-grid"><Form.Item name="importance" label="重要程度" initialValue={1}><Select options={[{ value: 1, label: "重要" }, { value: 0, label: "不重要" }]} /></Form.Item><Form.Item name="urgency" label="紧急程度" initialValue={1}><Select options={[{ value: 1, label: "紧急" }, { value: 0, label: "不紧急" }]} /></Form.Item></div><Form.Item name="is_frog" valuePropName="checked"><Checkbox>标记为青蛙 <FrogHelp /></Checkbox></Form.Item></Form>;
 }
+
+
 
 
 
