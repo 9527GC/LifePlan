@@ -124,6 +124,28 @@ pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
     }
     if version == migrations::CURRENT_SCHEMA_VERSION {
         validate_current_schema(conn)?;
+        remove_obsolete_daily_schedule_slot(conn)?;
+        return Ok(false);
+    }
+    if version == 8 {
+        migrate_recurring_actions(conn)?;
+        return Ok(false);
+    }
+    if version == 7 {
+        migrate_reward_metadata(conn)?;
+        return Ok(false);
+    }
+    if version == 6 {
+        migrate_pomodoro_rewards(conn)?;
+        return Ok(false);
+    }
+    if version == 5 {
+        migrate_daily_schedule(conn)?;
+        remove_obsolete_daily_schedule_slot(conn)?;
+        return Ok(false);
+    }
+    if version == 4 {
+        migrate_daily_list(conn)?;
         return Ok(false);
     }
     if version == 2 || version == 3 {
@@ -140,6 +162,123 @@ pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
     )))
 }
 
+fn create_pomodoro_reward_tables(conn: &Connection) -> Result<(), DbError> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS pomodoro_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+            action_id INTEGER REFERENCES actions(id) ON DELETE SET NULL,
+            start_time INTEGER NOT NULL,
+            end_time INTEGER,
+            planned_seconds INTEGER NOT NULL DEFAULT 1500,
+            actual_seconds INTEGER,
+            status INTEGER NOT NULL DEFAULT -1,
+            interrupt_type INTEGER,
+            interrupt_reason TEXT,
+            points_awarded INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_pomodoro_records_space_time ON pomodoro_records(space_id, start_time DESC);
+        CREATE TABLE IF NOT EXISTS rewards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+            name TEXT NOT NULL,
+            description TEXT,
+            points_required INTEGER NOT NULL,
+            category TEXT NOT NULL DEFAULT '其他',
+            icon TEXT NOT NULL DEFAULT '🎁',
+            status INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_rewards_space_status ON rewards(space_id, status, created_at);
+        CREATE TABLE IF NOT EXISTS reward_exchanges (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+            reward_id INTEGER NOT NULL REFERENCES rewards(id),
+            points_used INTEGER NOT NULL,
+            exchanged_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_reward_exchanges_space_time ON reward_exchanges(space_id, exchanged_at DESC);
+        CREATE TABLE IF NOT EXISTS user_points (
+            space_id TEXT PRIMARY KEY REFERENCES local_spaces(space_id),
+            total_points INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL
+        );"
+    )
+    .map_err(|error| DbError::MigrationFailed(error.to_string()))
+}
+
+fn migrate_reward_metadata(conn: &mut Connection) -> Result<(), DbError> {
+    if !column_exists(conn, "rewards", "category")? {
+        conn.execute(
+            "ALTER TABLE rewards ADD COLUMN category TEXT NOT NULL DEFAULT '其他'",
+            [],
+        )
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    }
+    if !column_exists(conn, "rewards", "icon")? {
+        conn.execute(
+            "ALTER TABLE rewards ADD COLUMN icon TEXT NOT NULL DEFAULT '🎁'",
+            [],
+        )
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    }
+    migrate_recurring_actions(conn)?;
+    Ok(())
+}
+
+fn migrate_recurring_actions(conn: &mut Connection) -> Result<(), DbError> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS recurring_actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+            sync_id TEXT NOT NULL UNIQUE,
+            deleted_at INTEGER,
+            title TEXT NOT NULL,
+            estimated_hours REAL NOT NULL DEFAULT 1,
+            is_frog INTEGER NOT NULL DEFAULT 0,
+            importance INTEGER NOT NULL DEFAULT 1,
+            urgency INTEGER NOT NULL DEFAULT 1,
+            priority INTEGER NOT NULL DEFAULT 4,
+            frequency_unit TEXT NOT NULL DEFAULT 'daily',
+            frequency_count INTEGER NOT NULL DEFAULT 1,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_recurring_actions_space_order ON recurring_actions(space_id, deleted_at, sort_order, id);"
+    )
+    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    validate_current_schema(conn)
+}
+
+fn migrate_pomodoro_rewards(conn: &mut Connection) -> Result<(), DbError> {
+    create_pomodoro_reward_tables(conn)?;
+    migrate_reward_metadata(conn)
+}
+
+fn remove_obsolete_daily_schedule_slot(conn: &mut Connection) -> Result<(), DbError> {
+    let tx = conn
+        .transaction()
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    tx.execute(
+        "DELETE FROM daily_schedule_templates WHERE start_time = '12:00' AND end_time = '13:30'",
+        [],
+    )
+    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    tx.execute(
+        "DELETE FROM daily_schedule_slots WHERE start_time = '12:00' AND end_time = '13:30'",
+        [],
+    )
+    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    tx.commit()
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))
+}
+
 fn migrate_sort_order(conn: &mut Connection) -> Result<(), DbError> {
     if !column_exists(conn, "actions", "sort_order")? {
         conn.execute(
@@ -153,9 +292,65 @@ fn migrate_sort_order(conn: &mut Connection) -> Result<(), DbError> {
         [],
     )
     .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    validate_current_schema(conn)
+    migrate_daily_list(conn)
+}
+
+fn migrate_daily_list(conn: &mut Connection) -> Result<(), DbError> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS daily_list_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+            action_id INTEGER NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+            list_date TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            UNIQUE(space_id, action_id, list_date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_daily_list_space_date ON daily_list_items(space_id, list_date, sort_order, id);"
+    )
+    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    migrate_daily_schedule(conn)
+}
+
+fn migrate_daily_schedule(conn: &mut Connection) -> Result<(), DbError> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS daily_schedule_days (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+            list_date TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(space_id, list_date)
+        );
+        CREATE TABLE IF NOT EXISTS daily_schedule_slots (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+            list_date TEXT NOT NULL,
+            start_time TEXT NOT NULL,
+            end_time TEXT NOT NULL,
+            action_id INTEGER REFERENCES actions(id) ON DELETE SET NULL,
+            actual_notes TEXT,
+            met_expectation INTEGER,
+            focused INTEGER,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS daily_schedule_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+            start_time TEXT NOT NULL,
+            end_time TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_daily_schedule_days_space_date ON daily_schedule_days(space_id, list_date);
+        CREATE INDEX IF NOT EXISTS idx_daily_schedule_slots_space_date ON daily_schedule_slots(space_id, list_date, sort_order, start_time);
+        CREATE INDEX IF NOT EXISTS idx_daily_schedule_templates_space ON daily_schedule_templates(space_id, sort_order);"
+    )
+    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    create_pomodoro_reward_tables(conn)?;
+    migrate_recurring_actions(conn)?;
+    Ok(())
 }
 
 fn requires_legacy_migration(conn: &Connection) -> Result<bool, DbError> {
@@ -215,6 +410,82 @@ fn validate_current_schema(conn: &Connection) -> Result<(), DbError> {
         (
             "actions",
             &["space_id", "sync_id", "deleted_at", "sort_order"][..],
+        ),
+        (
+            "recurring_actions",
+            &[
+                "space_id",
+                "sync_id",
+                "deleted_at",
+                "title",
+                "estimated_hours",
+                "is_frog",
+                "importance",
+                "urgency",
+                "priority",
+                "frequency_unit",
+                "frequency_count",
+                "sort_order",
+            ][..],
+        ),
+        (
+            "daily_list_items",
+            &["space_id", "action_id", "list_date", "sort_order"][..],
+        ),
+        (
+            "daily_schedule_days",
+            &["space_id", "list_date", "created_at"][..],
+        ),
+        (
+            "daily_schedule_slots",
+            &[
+                "space_id",
+                "list_date",
+                "start_time",
+                "end_time",
+                "action_id",
+                "actual_notes",
+                "met_expectation",
+                "focused",
+                "sort_order",
+            ][..],
+        ),
+        (
+            "daily_schedule_templates",
+            &["space_id", "start_time", "end_time", "sort_order"][..],
+        ),
+        (
+            "pomodoro_records",
+            &[
+                "space_id",
+                "action_id",
+                "start_time",
+                "end_time",
+                "planned_seconds",
+                "actual_seconds",
+                "status",
+                "points_awarded",
+            ][..],
+        ),
+        (
+            "rewards",
+            &[
+                "space_id",
+                "name",
+                "description",
+                "points_required",
+                "category",
+                "icon",
+                "status",
+            ][..],
+        ),
+        (
+            "reward_exchanges",
+            &["space_id", "reward_id", "points_used", "exchanged_at"][..],
+        ),
+        (
+            "user_points",
+            &["space_id", "total_points", "updated_at"][..],
         ),
     ] {
         if !table_exists(conn, table)? {

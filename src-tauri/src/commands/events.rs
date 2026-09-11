@@ -235,10 +235,17 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
         "delegate" => {
             let delegated_to = payload.delegated_to.as_deref().unwrap_or("").trim();
             let follow_up_date = payload.follow_up_date.as_deref().unwrap_or("").trim();
-            let action_title = payload.action_title.as_deref().unwrap_or("").trim();
-            if delegated_to.is_empty() || follow_up_date.is_empty() || action_title.is_empty() {
-                return Err("委托对象、跟进日期和行动标题不能为空".into());
+            if delegated_to.is_empty() || follow_up_date.is_empty() {
+                return Err("委托对象和跟进日期不能为空".into());
             }
+            let event_title: String = tx
+                .query_row(
+                    "SELECT title FROM events WHERE id = ?1 AND space_id = ?2 AND deleted_at IS NULL",
+                    params![payload.event_id, space_id],
+                    |row| row.get(0),
+                )
+                .map_err(|error| error.to_string())?;
+            let action_title = format!("跟进委托{}-{}", delegated_to, event_title.trim());
             tx.execute(
                 "UPDATE events SET status = 2, delegated_to = ?1, follow_up_date = ?2,
                  follow_up_note = ?3, updated_at = ?4
@@ -246,7 +253,7 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
                 params![
                     delegated_to,
                     follow_up_date,
-                    payload.follow_up_note.as_deref(),
+                    Option::<&str>::None,
                     timestamp,
                     payload.event_id,
                     space_id
@@ -264,7 +271,7 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
                     new_uuid(),
                     payload.event_id,
                     action_title,
-                    payload.follow_up_note.as_deref(),
+                    Option::<&str>::None,
                     follow_up_date,
                     timestamp
                 ],

@@ -51,8 +51,6 @@ pub struct ProcessEvent {
     pub action_steps: Option<Vec<ProcessActionStep>>,
     pub delegated_to: Option<String>,
     pub follow_up_date: Option<String>,
-    pub follow_up_note: Option<String>,
-    pub action_title: Option<String>,
     pub delay_until: Option<String>,
     pub delay_note: Option<String>,
     pub abandon_reason: Option<String>,
@@ -164,8 +162,191 @@ pub struct ReorderProjectActions {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecurringAction {
+    pub id: i64,
+    pub title: String,
+    pub estimated_hours: f64,
+    pub is_frog: i32,
+    pub importance: i32,
+    pub urgency: i32,
+    pub priority: i32,
+    pub frequency_unit: String,
+    pub frequency_count: i32,
+    pub sort_order: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewRecurringAction {
+    pub title: String,
+    pub estimated_hours: f64,
+    pub is_frog: i32,
+    pub importance: i32,
+    pub urgency: i32,
+    pub frequency_unit: String,
+    pub frequency_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateRecurringAction {
+    pub id: i64,
+    pub title: String,
+    pub estimated_hours: f64,
+    pub is_frog: i32,
+    pub importance: i32,
+    pub urgency: i32,
+    pub frequency_unit: String,
+    pub frequency_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReorderRecurringActions {
+    pub action_ids: Vec<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyListItem {
+    pub id: i64,
+    pub action_id: i64,
+    pub list_date: String,
+    pub sort_order: i64,
+    pub action: Action,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddDailyListItem {
+    pub action_id: i64,
+    pub list_date: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReorderDailyList {
+    pub list_date: String,
+    pub action_ids: Vec<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyScheduleSlot {
+    pub id: i64,
+    pub list_date: String,
+    pub start_time: String,
+    pub end_time: String,
+    pub action_id: Option<i64>,
+    pub action: Option<Action>,
+    pub actual_notes: Option<String>,
+    pub met_expectation: Option<i32>,
+    pub focused: Option<i32>,
+    pub sort_order: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailySchedule {
+    pub list_date: String,
+    pub slots: Vec<DailyScheduleSlot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewDailySlot {
+    pub list_date: String,
+    pub start_time: String,
+    pub end_time: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateDailySlot {
+    pub id: i64,
+    pub start_time: String,
+    pub end_time: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateDailySlotReview {
+    pub id: i64,
+    pub actual_notes: String,
+    pub met_expectation: i32,
+    pub focused: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyTemplateSlot {
+    pub start_time: String,
+    pub end_time: String,
+    pub sort_order: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DelegatedFollowUpResolution {
     pub action_id: i64,
     pub resolution: String,
     pub abandon_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PomodoroRecord {
+    pub id: i64,
+    pub action_id: Option<i64>,
+    pub action_title: Option<String>,
+    pub start_time: i64,
+    pub end_time: Option<i64>,
+    pub planned_seconds: i64,
+    pub actual_seconds: Option<i64>,
+    pub status: i32,
+    pub interrupt_type: Option<i32>,
+    pub interrupt_reason: Option<String>,
+    pub points_awarded: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PomodoroStatus {
+    pub active: Option<PomodoroRecord>,
+    pub total_points: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Reward {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub points_required: i64,
+    pub category: String,
+    pub icon: String,
+    pub status: i32,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewReward {
+    pub name: String,
+    pub description: Option<String>,
+    pub points_required: i64,
+    pub category: String,
+    pub icon: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateReward {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub points_required: i64,
+    pub category: String,
+    pub icon: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RewardExchange {
+    pub id: i64,
+    pub reward_id: i64,
+    pub reward_name: String,
+    pub points_used: i64,
+    pub exchanged_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RewardsOverview {
+    pub total_points: i64,
+    pub rewards: Vec<Reward>,
+    pub exchanges: Vec<RewardExchange>,
 }

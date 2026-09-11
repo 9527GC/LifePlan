@@ -206,8 +206,12 @@ pub fn update_action(state: State<'_, AppState>, payload: UpdateAction) -> Resul
         )
         .optional()
         .map_err(|error| error.to_string())?;
-    let project_id = action_context.as_ref().and_then(|(project_id, _, _, _)| *project_id);
-    let previous_start_date = action_context.as_ref().and_then(|(_, start_date, _, _)| start_date.as_deref());
+    let project_id = action_context
+        .as_ref()
+        .and_then(|(project_id, _, _, _)| *project_id);
+    let previous_start_date = action_context
+        .as_ref()
+        .and_then(|(_, start_date, _, _)| start_date.as_deref());
     let (importance, urgency) = if let Some(project_id) = project_id {
         conn.query_row(
             "SELECT importance, urgency FROM projects WHERE id = ?1 AND space_id = ?2 AND deleted_at IS NULL",
@@ -215,11 +219,22 @@ pub fn update_action(state: State<'_, AppState>, payload: UpdateAction) -> Resul
             |row| Ok((row.get(0)?, row.get(1)?)),
         ).map_err(|error| error.to_string())?
     } else {
-        action_context.as_ref().map(|(_, _, importance, urgency)| (*importance, *urgency)).unwrap_or((payload.importance, payload.urgency))
+        action_context
+            .as_ref()
+            .map(|(_, _, importance, urgency)| (*importance, *urgency))
+            .unwrap_or((payload.importance, payload.urgency))
     };
     let sort_order = if let Some(project_id) = project_id {
         if previous_start_date != payload.start_date.as_deref() {
-            Some(next_project_date_sort_order(&conn, project_id, &space_id, payload.start_date.as_deref()).map_err(|error| error.to_string())?)
+            Some(
+                next_project_date_sort_order(
+                    &conn,
+                    project_id,
+                    &space_id,
+                    payload.start_date.as_deref(),
+                )
+                .map_err(|error| error.to_string())?,
+            )
         } else {
             None
         }

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Action, Event, NewAction, NewEvent, ProcessEvent, Project, ReorderProjectActions, StartupNotice, UpdateAction, UpdateEvent, UpdateProject } from "@/types";
+import type { Action, AddDailyListItem, DailyListItem, DailySchedule, DailyScheduleSlot, DailyTemplateSlot, Event, NewAction, NewEvent, NewDailySlot, NewRecurringAction, ProcessEvent, Project, RecurringAction, ReorderDailyList, ReorderProjectActions, ReorderRecurringActions, StartupNotice, UpdateAction, UpdateDailySlot, UpdateDailySlotReview, UpdateEvent, UpdateProject, PomodoroRecord, PomodoroStatus, NewReward, Reward, RewardsOverview, UpdateReward, UpdateRecurringAction } from "@/types";
 
 type TauriWindow = Window & {
   __TAURI_INTERNALS__?: {
@@ -47,4 +47,48 @@ export const actionsApi = {
   delete: (id: number) => invokeCommand<void>("delete_action", { id }),
   reorder: (payload: ReorderProjectActions) => invokeCommand<void>("reorder_project_actions", { payload }),
   resolveDelegated: (actionId: number, resolution: string, abandonReason?: string) => invokeCommand<void>("complete_delegated_follow_up", { payload: { action_id: actionId, resolution, abandon_reason: abandonReason } }),
+};
+
+export const recurringActionsApi = {
+  list: () => invokeCommand<RecurringAction[]>("get_recurring_actions"),
+  create: (payload: NewRecurringAction) => invokeCommand<RecurringAction>("create_recurring_action", { payload }),
+  update: (payload: UpdateRecurringAction) => invokeCommand<RecurringAction>("update_recurring_action", { payload }),
+  reorder: (payload: ReorderRecurringActions) => invokeCommand<RecurringAction[]>("reorder_recurring_actions", { payload }),
+  instantiate: (recurringActionId: number) => invokeCommand<Action>("create_action_from_recurring", { recurringActionId }),
+};
+
+export const dailyListApi = {
+  list: (listDate: string) => invokeCommand<DailyListItem[]>("get_daily_list", { listDate }),
+  add: (payload: AddDailyListItem) => invokeCommand<DailyListItem[]>("add_daily_list_item", { payload }),
+  remove: (listDate: string, actionId: number) => invokeCommand<DailyListItem[]>("remove_daily_list_item", { listDate, actionId }),
+  reorder: (payload: ReorderDailyList) => invokeCommand<DailyListItem[]>("reorder_daily_list", { payload }),
+};
+
+export const dailyScheduleApi = {
+  get: (listDate: string) => invokeCommand<DailySchedule>("get_daily_schedule", { listDate }),
+  initialize: (listDate: string) => invokeCommand<DailySchedule>("initialize_daily_schedule", { listDate }),
+  createSlot: (payload: NewDailySlot) => invokeCommand<DailyScheduleSlot>("create_daily_slot", { payload }),
+  updateSlot: (payload: UpdateDailySlot) => invokeCommand<DailyScheduleSlot>("update_daily_slot", { payload }),
+  deleteSlot: (listDate: string, slotId: number) => invokeCommand<void>("delete_daily_slot", { listDate, slotId }),
+  assignAction: (slotId: number, actionId?: number) => invokeCommand<DailyScheduleSlot>("assign_daily_slot_action", { slotId, actionId: actionId ?? null }),
+  updateReview: (payload: UpdateDailySlotReview) => invokeCommand<DailyScheduleSlot>("update_daily_slot_review", { payload }),
+  template: () => invokeCommand<DailyTemplateSlot[]>("get_daily_template"),
+  saveTemplate: (slots: DailyTemplateSlot[]) => invokeCommand<DailyTemplateSlot[]>("save_daily_template", { slots }),
+};
+
+
+export const pomodoroApi = {
+  status: () => invokeCommand<PomodoroStatus>("get_pomodoro_status"),
+  start: (actionId: number | undefined, plannedSeconds: number) => invokeCommand<PomodoroRecord>("start_pomodoro", { actionId: actionId ?? null, plannedSeconds }),
+  finish: (recordId: number, status: 0 | 1 | 2, interruptType?: 0 | 1 | 2, interruptReason?: string) => invokeCommand<PomodoroStatus>("finish_pomodoro", { recordId, status, interruptType: interruptType ?? null, interruptReason: interruptReason || null }),
+  award: (recordId: number) => invokeCommand<PomodoroStatus>("award_pomodoro_points", { recordId }),
+  records: (limit = 20) => invokeCommand<PomodoroRecord[]>("get_pomodoro_records", { limit }),
+};
+
+export const rewardsApi = {
+  overview: () => invokeCommand<RewardsOverview>("get_rewards_overview"),
+  create: (payload: NewReward) => invokeCommand<Reward>("create_reward", { payload }),
+  update: (payload: UpdateReward) => invokeCommand<Reward>("update_reward", { payload }),
+  archive: (id: number) => invokeCommand<void>("archive_reward", { id }),
+  exchange: (rewardId: number) => invokeCommand<RewardsOverview>("exchange_reward", { rewardId }),
 };
