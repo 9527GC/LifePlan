@@ -69,7 +69,13 @@ export default function OnboardingCarousel({ onFinish }: OnboardingCarouselProps
 
   useEffect(() => { track("查看新用户引导", { slide: current + 1 }); }, [current]);
 
-  const finish = () => { localStorage.setItem("lifeplan-onboarding-completed", "1"); track("完成新用户引导"); onFinish(); };
+  const finish = () => {
+    localStorage.setItem("lifeplan-onboarding-v1-completed", "1");
+    // 保留旧键，兼容已完成过旧版引导的用户。
+    localStorage.setItem("lifeplan-onboarding-completed", "1");
+    track("完成新用户引导");
+    onFinish();
+  };
   const next = () => isLast ? finish() : setCurrent((value) => value + 1);
   const previous = () => setCurrent((value) => Math.max(0, value - 1));
 

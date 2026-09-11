@@ -225,7 +225,7 @@ body.pomodoro-floating-mode .app-shell { padding-top: 0; }
 .project-action-saving { display: inline-flex; align-items: center; gap: 5px; color: #606266; }
 .project-action-saving svg { animation: project-action-spin .9s linear infinite; color: #1778ff; }
 @keyframes project-action-spin { to { transform: rotate(360deg); } }
-.project-actions-panel .ant-list-item { padding: 12px 0; }
+.project-actions-panel .ant-list-item { padding: 5px 0; }
 .project-action-item { position: relative; transition: opacity .15s ease, background-color .15s ease, box-shadow .15s ease; }
 .project-action-item.is-dragging { opacity: .45; }
 .project-action-item.is-drag-over-before,
@@ -245,11 +245,11 @@ body.pomodoro-floating-mode .app-shell { padding-top: 0; }
 .project-actions-panel .ant-list-item[draggable="true"] { cursor: grab; }
 .project-actions-panel .ant-list-item[draggable="true"]:active { cursor: grabbing; }
 .project-actions-panel .ant-list-item-meta-avatar { align-self: flex-start; margin-top: 1px; }
-.project-actions-panel .ant-list-item-meta-title { margin-bottom: 10px !important; }
-.project-actions-panel .ant-list-item-meta-description { color: #8c8c8c; font-size: 12px; line-height: 18px; }
+.project-actions-panel .ant-list-item-meta-title { margin-bottom: 3px !important; line-height: 18px; }
+.project-actions-panel .ant-list-item-meta-description { color: #8c8c8c; font-size: 11px; line-height: 15px; }
 .project-actions-panel .ant-list-item-meta-description .action-start-meta,
 .project-actions-panel .ant-list-item-meta-description .action-duration-meta,
-.project-actions-panel .ant-list-item-meta-description .action-detail-meta { color: #909399; font-size: 12px !important; line-height: 18px; }
+.project-actions-panel .ant-list-item-meta-description .action-detail-meta { color: #909399; font-size: 11px !important; line-height: 15px; }
 .project-actions-panel .ant-list-item-meta-avatar { margin-inline-end: 10px; }
 .project-actions-panel .ant-list-item .ant-tag { margin-inline-end: 0; }
 .project-action-summary { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0; border: 0; color: #0069ff; background: transparent; font: inherit; font-size: 14px; font-weight: 400; line-height: 22px; cursor: pointer; }
@@ -710,3 +710,65 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn { min-width: 0
 .projects-embedded .record-list-empty > .projects-empty-state { height: 100%; }
 .record-list-empty > .inbox-empty-state .empty,
 .projects-embedded .record-list-empty > .projects-empty-state .empty { width: 100%; }
+
+/* 事件下行动卡片采用更紧凑的高度，减少列表纵向占用。 */
+.project-action-item .ant-list-item-action > li { padding: 0 2px; }
+.project-action-item .ant-list-item-action .ant-btn { height: 24px; padding-inline: 4px; font-size: 12px; }
+
+/* 事件下行动序号使用浅色圆圈样式，并随行动排序实时更新。 */
+.project-action-title { display: inline-flex; align-items: center; gap: 6px; }
+.project-action-number { display: inline-flex; width: 18px; height: 18px; align-items: center; justify-content: center; flex: 0 0 18px; color: #91b7e3; background: #eef6ff; border-radius: 50%; font-size: 12px; font-weight: 600; line-height: 18px; }
+
+/* 事件拆解弹框：Ant Design 6 使用 ant-modal-container 作为内容容器。 */
+.process-action-modal-wrap.ant-modal-wrap {
+  inset: 0 !important;
+  box-sizing: border-box !important;
+  height: 100dvh !important;
+  padding: 16px 0 !important;
+  overflow: hidden !important;
+}
+.process-action-modal-wrap.ant-modal-wrap > .process-action-modal.ant-modal {
+  top: 0 !important;
+  box-sizing: border-box !important;
+  width: min(640px, calc(100vw - 32px)) !important;
+  height: calc(100dvh - 32px) !important;
+  max-height: calc(100dvh - 32px) !important;
+  margin: 0 auto !important;
+}
+.process-action-modal-wrap .process-action-modal .ant-modal-container {
+  box-sizing: border-box !important;
+  display: flex !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+.process-action-modal-wrap .process-action-modal .ant-modal-header,
+.process-action-modal-wrap .process-action-modal .ant-modal-footer {
+  flex: 0 0 auto !important;
+}
+.process-action-modal-wrap .process-action-modal .ant-modal-body {
+  box-sizing: border-box !important;
+  display: flex !important;
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+  overflow: hidden !important;
+}
+.process-action-modal-wrap .process-action-modal .form {
+  display: flex !important;
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+.process-action-scroll-area {
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+  margin-right: -16px;
+  padding-right: 16px;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+.process-action-modal-wrap .process-action-modal .form-footer {
+  flex: 0 0 auto !important;
+}

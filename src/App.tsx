@@ -1,7 +1,31 @@
 import { useEffect, useState } from "react";
+import dayjs from "dayjs";
+import updateLocale from "dayjs/plugin/updateLocale";
+import "dayjs/locale/zh-cn";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Alert, Button, ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
+
+dayjs.extend(updateLocale);
+dayjs.updateLocale("zh-cn", {
+  weekStart: 1,
+  weekdaysMin: ["日", "一", "二", "三", "四", "五", "六"],
+  weekdaysShort: ["日", "一", "二", "三", "四", "五", "六"],
+});
+dayjs.locale("zh-cn");
+
+const chineseCalendarLocale = {
+  ...zhCN,
+  DatePicker: {
+    ...zhCN.DatePicker!,
+    lang: {
+      ...zhCN.DatePicker!.lang,
+      weekStart: 1,
+      weekdaysMin: ["日", "一", "二", "三", "四", "五", "六"],
+      weekdaysShort: ["日", "一", "二", "三", "四", "五", "六"],
+    },
+  },
+};
 import Layout from "@/components/layout/Layout";
 import Inbox from "@/pages/Inbox";
 import DailyList from "@/pages/DailyList";
@@ -16,7 +40,7 @@ export default function App() {
   const [notice, setNotice] = useState<StartupNotice | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState("");
-  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem("lifeplan-onboarding-v1-completed") !== "1");
+  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem("lifeplan-onboarding-v1-completed") !== "1" && localStorage.getItem("lifeplan-onboarding-completed") !== "1");
 
   useEffect(() => {
     const handleOpenOnboarding = () => setShowOnboarding(true);
@@ -51,7 +75,7 @@ export default function App() {
     }
   };
 
-  return <ConfigProvider locale={zhCN} theme={{
+  return <ConfigProvider locale={chineseCalendarLocale} theme={{
     token: {
       colorPrimary: "#1778FF",
       borderRadius: 6,

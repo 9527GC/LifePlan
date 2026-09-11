@@ -157,8 +157,8 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
                 if step.title.trim().is_empty() {
                     return Err("行动标题不能为空".into());
                 }
-                if ![0.5, 1.0, 1.5, 2.0].contains(&step.estimated_hours) {
-                    return Err("行动耗时必须为 30 分钟、1 小时、1.5 小时或 2 小时".into());
+                if ![0.0, 0.5, 1.0, 1.5, 2.0].contains(&step.estimated_hours) {
+                    return Err("行动耗时必须为空、30 分钟、1 小时、1.5 小时或 2 小时".into());
                 }
                 if step.start_date.is_some()
                     && payload.deadline.is_some()
@@ -478,3 +478,4 @@ pub fn delete_event(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     .map_err(|error| error.to_string())?;
     tx.commit().map_err(|error| error.to_string())
 }
+

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import dayjs, { type Dayjs } from "dayjs";
 import { Alert, Button, Card, DatePicker, Empty, Form, Input, Modal as AntModal, Popconfirm, Select, Space, Steps, Tabs, Tag, Typography, message } from "antd";
@@ -86,24 +86,52 @@ function ProcessModal({ data, onClose, onSubmit }: { data: { event: Event; mode:
   const [projectValues, setProjectValues] = useState<Record<string, unknown>>({});
   const [step, setStep] = useState(0);
   const [validationError, setValidationError] = useState<{ index: number; field: string } | null>(null);
-  useEffect(() => { if (data) { const initialProjectValues = { project_title: data.event.title, importance: "1", urgency: "1" }; form.setFieldsValue(initialProjectValues); setProjectValues(initialProjectValues); setSteps([{ title: `完成：${data.event.title}`, start_date: dayjs().format("YYYY-MM-DD"), estimated_hours: 1 }]); setStep(0); setValidationError(null); } }, [data, form]);
+  const actionTitleRefs = useRef<Array<{ focus: () => void } | null>>([]);
+  const focusActionIndex = useRef<number | null>(null);
+  useEffect(() => { if (data) { const initialProjectValues = { project_title: data.event.title, importance: "1", urgency: "0" }; form.setFieldsValue(initialProjectValues); setProjectValues(initialProjectValues); setSteps([{ title: `完成：${data.event.title}`, start_date: "", estimated_hours: 0 }]); setStep(0); setValidationError(null); } }, [data, form]);
+  useEffect(() => {
+    if (focusActionIndex.current === null) return;
+    const index = focusActionIndex.current;
+    focusActionIndex.current = null;
+    requestAnimationFrame(() => actionTitleRefs.current[index]?.focus());
+  }, [steps]);
   if (!data) return null;
   const { event, mode } = data;
   const title = mode === "self" ? "拆解行动" : mode === "delegate" ? "委托跟进" : mode === "delay" ? "推迟处理" : "放弃事件";
+  const addActionAfter = (index: number) => {
+    const previous = steps[index];
+    const nextIndex = index + 1;
+    setSteps((current) => [...current.slice(0, nextIndex), { title: "", start_date: previous?.start_date, estimated_hours: 0 }, ...current.slice(nextIndex)]);
+    setValidationError(null);
+    focusActionIndex.current = nextIndex;
+  };
+  const handleFormKeyDown = (event: React.KeyboardEvent<HTMLFormElement>) => {
+    if (mode !== "self" || step !== 1 || event.key !== "Enter") return;
+    const row = (event.target as HTMLElement).closest<HTMLElement>("[data-action-step-index]");
+    if (!row) return;
+    event.preventDefault();
+    event.stopPropagation();
+    addActionAfter(Number(row.dataset.actionStepIndex));
+  };
   const updateStep = (index: number, key: keyof ProcessActionStep, value: string | number) => { setValidationError((current) => current?.index === index && current.field === key ? null : current); setSteps((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item)); };
   const submit = async (values: Record<string, unknown>) => {
     if (mode === "self" && step === 0) { if (!(values.project_title as string)?.trim()) return; setProjectValues(values); setStep(1); return; }
-    if (mode === "self") { const invalidIndex = steps.findIndex((item) => !item.title?.trim() || !item.start_date || !item.estimated_hours); if (invalidIndex >= 0) { const item = steps[invalidIndex]; setValidationError({ index: invalidIndex, field: !item.title?.trim() ? "title" : !item.start_date ? "start_date" : "estimated_hours" }); return; } }
+    if (mode === "self") { const invalidIndex = steps.findIndex((item) => !item.title?.trim()); if (invalidIndex >= 0) { setValidationError({ index: invalidIndex, field: "title" }); return; } }
     const savedProjectValues = mode === "self" ? projectValues : {};
     await onSubmit({ event_id: event.id, decision: mode, project_title: (savedProjectValues.project_title ?? values.project_title) as string, target: (savedProjectValues.target ?? values.target) as string, start_date: toDateString((savedProjectValues.start_date ?? values.start_date) as Dayjs | string | undefined), deadline: toDateString((savedProjectValues.deadline ?? values.deadline) as Dayjs | string | undefined), importance: Number(savedProjectValues.importance ?? values.importance), urgency: Number(savedProjectValues.urgency ?? values.urgency), action_steps: steps, delegated_to: values.delegated_to as string, follow_up_date: toDateString(values.follow_up_date as Dayjs | string | undefined), delay_until: toDateString(values.delay_until as Dayjs | string | undefined), delay_note: values.delay_note as string, abandon_reason: values.abandon_reason as string });
   };
   const dateField = (name: string, label: string, required = false) => <Form.Item name={name} label={label} rules={required ? [{ required: true, message: `请选择${label}` }] : undefined}><DatePicker className="full-width" format="YYYY-MM-DD" /></Form.Item>;
-  return <AntModal open title={title} onCancel={onClose} footer={null} width={640} destroyOnHidden>
-    <Form form={form} className="form" layout="vertical" onFinish={(values) => void submit(values)}>
-      {mode === "self" ? <><Steps current={step} items={[{ title: "梳理事件" }, { title: "拆解行动" }]} className="process-steps" />{step === 0 ? <div className="form-grid"><Form.Item className="full" name="project_title" label="事件标题" rules={[{ required: true, message: "请输入事件标题" }]}><Input autoFocus /></Form.Item><Form.Item name="importance" label="重要程度"><Select options={[{ value: "1", label: "重要" }, { value: "0", label: "不重要" }]} /></Form.Item><Form.Item name="urgency" label="紧急程度"><Select options={[{ value: "1", label: "紧急" }, { value: "0", label: "不紧急" }]} /></Form.Item><Form.Item className="full" name="target" label="事件目标"><Input.TextArea placeholder="选填" autoSize={{ minRows: 3, maxRows: 5 }} /></Form.Item></div> : <div className="action-steps"><Typography.Text type="secondary">把项目拆成具体、可执行的行动，至少填写一条。</Typography.Text><div className="action-step-header"><span className="action-step-header-title">行动标题 *</span><span className="action-step-header-date">开始日期 *</span><span className="action-step-header-duration">预计耗时 *</span><span /></div>{steps.map((item, index) => <div key={index} className="action-step-wrap"><div className="action-step-row"><span className="action-step-number">{index + 1}</span><Input className="action-step-title" aria-label="行动标题" value={item.title} onChange={(e) => updateStep(index, "title", e.target.value)} placeholder="填写行动标题" /><DatePicker className="action-step-date" aria-label="开始日期" value={item.start_date ? dayjs(item.start_date) : null} format="YYYY-MM-DD" onChange={(value) => updateStep(index, "start_date", value?.format("YYYY-MM-DD") ?? "")} /><Select className="action-step-duration" aria-label="预计耗时" value={item.estimated_hours || undefined} options={hours} onChange={(value) => updateStep(index, "estimated_hours", value)} placeholder="选择耗时" />{steps.length > 1 && <Button type="text" danger aria-label="删除行动" icon={<Trash2 size={15} />} onClick={() => setSteps((current) => current.filter((_, itemIndex) => itemIndex !== index))} />}</div>{validationError?.index === index && <Tag color="error">请填写{validationError.field === "title" ? "行动标题" : validationError.field === "start_date" ? "开始日期" : "预计耗时"}。</Tag>}</div>)}<Button type="dashed" icon={<Plus size={14} />} onClick={() => setSteps((current) => [...current, { title: "", estimated_hours: 0 }])}>添加下一步行动</Button></div>}</> : mode === "delegate" ? <div className="form-grid"><Form.Item name="delegated_to" label="委托对象" rules={[{ required: true, message: "请输入委托对象" }]}><Input /></Form.Item>{dateField("follow_up_date", "跟进日期", true)}</div> : mode === "delay" ? <div className="form-grid">{dateField("delay_until", "重新处理日期")}<Form.Item className="full" name="delay_note" label="备注"><Input.TextArea autoSize={{ minRows: 3, maxRows: 5 }} /></Form.Item></div> : <Form.Item name="abandon_reason" label="放弃原因" rules={[{ required: true, message: "请输入放弃原因" }]}><Input.TextArea autoFocus autoSize={{ minRows: 3, maxRows: 5 }} /></Form.Item>}
-      <div className="form-footer"><Button onClick={step === 1 && mode === "self" ? () => setStep(0) : onClose}>{step === 1 && mode === "self" ? "上一步" : "取消"}</Button><Button type="primary" danger={mode === "abandon"} htmlType="submit">{mode === "self" ? step === 0 ? "下一步" : "创建项目" : "确认"}</Button></div>
+  return <AntModal open title={title} onCancel={onClose} footer={null} width={640} destroyOnHidden className="process-action-modal" wrapClassName="process-action-modal-wrap" styles={{ body: { display: "flex", minHeight: 0, overflow: "hidden" } }}>
+    <Form form={form} className="form" layout="vertical" onKeyDown={handleFormKeyDown} onFinish={(values) => void submit(values)}>
+      <div className="process-action-scroll-area">{mode === "self" ? <><Steps current={step} items={[{ title: "梳理事件" }, { title: "拆解行动" }]} className="process-steps" />{step === 0 ? <div className="form-grid"><Form.Item className="full" name="project_title" label="事件标题" rules={[{ required: true, message: "请输入事件标题" }]}><Input autoFocus /></Form.Item><Form.Item name="importance" label="重要程度"><Select options={[{ value: "1", label: "重要" }, { value: "0", label: "不重要" }]} /></Form.Item><Form.Item name="urgency" label="紧急程度"><Select options={[{ value: "1", label: "紧急" }, { value: "0", label: "不紧急" }]} /></Form.Item><Form.Item className="full" name="target" label="事件目标"><Input.TextArea placeholder="选填" autoSize={{ minRows: 3, maxRows: 5 }} /></Form.Item></div> : <div className="action-steps"><Typography.Text type="secondary">把项目拆成具体、可执行的行动，按回车键可快速添加。</Typography.Text><div className="action-step-header"><span className="action-step-header-title">行动标题 *</span><span className="action-step-header-date">开始日期（选填）</span><span className="action-step-header-duration">预计耗时（选填）</span><span /></div>{steps.map((item, index) => <div key={index} className="action-step-wrap"><div className="action-step-row" data-action-step-index={index}><span className="action-step-number">{index + 1}</span><Input ref={(element) => { actionTitleRefs.current[index] = element; }} className="action-step-title" aria-label="行动标题" value={item.title} onChange={(e) => updateStep(index, "title", e.target.value)} placeholder="填写行动标题" /><DatePicker className="action-step-date" aria-label="开始日期" value={item.start_date ? dayjs(item.start_date) : null} format="YYYY-MM-DD" onChange={(value) => updateStep(index, "start_date", value?.format("YYYY-MM-DD") ?? "")} /><Select className="action-step-duration" aria-label="预计耗时" value={item.estimated_hours || undefined} options={hours} onChange={(value) => updateStep(index, "estimated_hours", value)} placeholder="选择耗时" />{steps.length > 1 && <Button type="text" danger aria-label="删除行动" icon={<Trash2 size={15} />} onClick={() => setSteps((current) => current.filter((_, itemIndex) => itemIndex !== index))} />}</div>{validationError?.index === index && <Tag color="error">请填写行动标题。</Tag>}</div>)}<Button type="dashed" icon={<Plus size={14} />} onClick={() => setSteps((current) => [...current, { title: "", start_date: current[current.length - 1]?.start_date, estimated_hours: 0 }])}>添加下一步行动</Button></div>}</> : mode === "delegate" ? <div className="form-grid"><Form.Item name="delegated_to" label="委托对象" rules={[{ required: true, message: "请输入委托对象" }]}><Input /></Form.Item>{dateField("follow_up_date", "跟进日期", true)}</div> : mode === "delay" ? <div className="form-grid">{dateField("delay_until", "重新处理日期")}<Form.Item className="full" name="delay_note" label="备注"><Input.TextArea autoSize={{ minRows: 3, maxRows: 5 }} /></Form.Item></div> : <Form.Item name="abandon_reason" label="放弃原因" rules={[{ required: true, message: "请输入放弃原因" }]}><Input.TextArea autoFocus autoSize={{ minRows: 3, maxRows: 5 }} /></Form.Item>}
+      </div><div className="form-footer"><Button onClick={step === 1 && mode === "self" ? () => setStep(0) : onClose}>{step === 1 && mode === "self" ? "上一步" : "取消"}</Button><Button type="primary" danger={mode === "abandon"} htmlType="submit">{mode === "self" ? step === 0 ? "下一步" : "保存" : "确认"}</Button></div>
     </Form>
   </AntModal>;
 }
+
+
+
+
+
 
 

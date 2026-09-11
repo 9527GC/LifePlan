@@ -71,7 +71,7 @@ pub fn list_actions(conn: &Connection) -> rusqlite::Result<Vec<Action>> {
 }
 
 fn valid_hours(hours: f64) -> bool {
-    [0.5, 1.0, 1.5, 2.0].contains(&hours)
+    [0.0, 0.5, 1.0, 1.5, 2.0].contains(&hours)
 }
 
 fn validate_dates(start: &Option<String>, deadline: &Option<String>) -> Result<(), String> {
@@ -87,7 +87,7 @@ fn validate_action_payload(payload: &NewAction) -> Result<(), String> {
         return Err("行动标题不能为空".into());
     }
     if !valid_hours(payload.estimated_hours) {
-        return Err("耗时必须为 30 分钟、1 小时、1.5 小时或 2 小时".into());
+        return Err("耗时可留空，或选择 30 分钟、1 小时、1.5 小时、2 小时".into());
     }
     validate_dates(&payload.start_date, &payload.deadline)
 }
@@ -505,3 +505,4 @@ pub fn complete_delegated_follow_up(
     }
     tx.commit().map_err(|error| error.to_string())
 }
+
