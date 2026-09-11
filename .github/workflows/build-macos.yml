@@ -35,7 +35,7 @@ jobs:
           targets: ${{ matrix.rust_target }}
 
       - name: 安装依赖
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: 构建 macOS 应用
         run: npm run tauri -- build --target ${{ matrix.rust_target }} --bundles app
@@ -61,3 +61,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: LifePlan-macos-${{ matrix.arch }}.zip
+
