@@ -11,7 +11,7 @@ const LOG_REQUIREMENTS_STORAGE = "lifeplan-ai-log-requirements";
 const WORK_LOG_STORAGE_PREFIX = "lifeplan-work-log-";
 const DEFAULT_API_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_MODEL = "gpt-5.6-luna";
-const DEFAULT_LOG_REQUIREMENTS = `1. 要求日志正文 150-200 字；
+const DEFAULT_LOG_REQUIREMENTS = `1. 要求日志正文 150-250 字左右；
 2. 按所属项目分组描述行动完成情况，必须按照“项目-行动”维度罗列，不要按照时间段维度罗列，不要出现“某个时间段安排了某件事”的描述；
 3. 统一使用“已完成、进行中、未完成、已取消或阻塞”等状态；
 4. 复盘记录中如有与计划事项不一致的实际工作情况，应如实补充说明；
@@ -29,8 +29,6 @@ const DEFAULT_LOG_TEMPLATE = `一、今日工作及完成情况 (必填)
   2.`;
 
 const readSetting = (key: string, fallback: string) => localStorage.getItem(key) || fallback;
-const countContent = (value: string) => value.replace(/\s/g, "").length;
-
 function buildPrompt(date: string, slots: DailyScheduleSlot[], template: string, requirements: string) {
   const details = slots.map((slot, index) => {
     const action = slot.action?.title || "未安排行动";
@@ -51,8 +49,6 @@ async function generateWorkLog(apiKey: string, apiUrl: string, model: string, da
   if (!response.ok) throw new Error(payload.error?.message || `AI 请求失败（${response.status}）`);
   const content = payload.choices?.[0]?.message?.content?.trim();
   if (!content) throw new Error("AI 没有返回工作日志内容");
-  const contentLength = countContent(content);
-  if (contentLength < 150 || contentLength > 200) throw new Error(`AI 返回的日志为 ${contentLength} 字，未符合 150-200 字要求，请再次点击生成`);
   return content;
 }
 
@@ -100,7 +96,7 @@ export default function WorkLogModal({ date, slots, onClose }: { date: string; s
     <Modal className="work-log-modal" wrapClassName="work-log-modal-wrap" open title="工作日志" width={720} style={{ top: 24, marginBottom: 24 }} onCancel={onClose} destroyOnHidden footer={<Space><Button icon={<Settings size={15} />} onClick={() => setSettingsOpen(true)}>AI 配置</Button><Button onClick={onClose}>关闭</Button>{content && <Button type="primary" onClick={() => { void navigator.clipboard?.writeText(content); message.success("日志已复制"); }}>复制日志</Button>}<Button type="primary" loading={generating} onClick={() => void generate()}>{content ? "重新生成" : "生成工作日志"}</Button></Space>}>
       <div className="work-log-meta"><FileText size={17} /><span>{date} · 已填写 {reviewCount}/{slots.length} 个时段复盘</span></div>
       {!apiKey && <Alert type="info" showIcon icon={<KeyRound size={16} />} message="请先接入自己的 AI API Key" description="API Key 仅保存在本机浏览器中，用于调用你配置的 AI 服务。" />}
-      {content ? <Input.TextArea className="work-log-content" value={content} onChange={(event) => { const nextContent = event.target.value; setContent(nextContent); localStorage.setItem(`${WORK_LOG_STORAGE_PREFIX}${date}`, nextContent); }} autoSize={{ minRows: 12, maxRows: 20 }} /> : <Typography.Paragraph type="secondary" className="work-log-empty">点击“生成工作日志”，AI 会根据当天每个时间段的行动与复盘，按指定模板整理成一份 150-200 字的日志。</Typography.Paragraph>}
+      {content ? <Input.TextArea className="work-log-content" value={content} onChange={(event) => { const nextContent = event.target.value; setContent(nextContent); localStorage.setItem(`${WORK_LOG_STORAGE_PREFIX}${date}`, nextContent); }} autoSize={{ minRows: 12, maxRows: 20 }} /> : <Typography.Paragraph type="secondary" className="work-log-empty">点击“生成工作日志”，AI 会根据当天每个时间段的行动与复盘，按指定模板整理成一份约 150-250 字的日志。</Typography.Paragraph>}
     </Modal>
     <Modal className="ai-settings-modal" wrapClassName="ai-settings-modal-wrap" open={settingsOpen} title="AI 配置" style={{ top: 24, marginBottom: 24 }} onCancel={() => setSettingsOpen(false)} onOk={saveSettings} okText="保存配置" cancelText="取消" destroyOnHidden>
       <Form layout="vertical">
@@ -113,21 +109,4 @@ export default function WorkLogModal({ date, slots, onClose }: { date: string; s
     </Modal>
   </>;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
