@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import dayjs, { type Dayjs } from "dayjs";
 import { Alert, Button, Checkbox, DatePicker, Empty, Form, Input, InputNumber, Modal as AntModal, Popconfirm, Select, Space, Tag, TimePicker, Tooltip, Typography, Radio, message } from "antd";
-import { ArrowRight, CalendarDays, ChevronDown, ChevronUp, FileText, ListChecks, Pencil, Plus, RotateCcw } from "lucide-react";
+import { ArrowRight, CalendarDays, ChevronDown, ChevronUp, FileText, ListChecks, Pencil, Plus, RotateCcw, ListTree, Rows3 } from "lucide-react";
 import { actionsApi, dailyScheduleApi, recurringActionsApi } from "@/lib/api";
 import type { Action, DailySchedule, DailyScheduleSlot, DailyTemplateSlot, NewAction, NewRecurringAction, RecurringAction, UpdateRecurringAction } from "@/types";
 import { userFacingError } from "@/lib/errors";
@@ -16,6 +16,7 @@ const minutesBetween = (start: string, end: string) => { const [sh, sm] = start.
 const slotLabel = (slot: DailyScheduleSlot) => `${formatTime(slot.start_time)}-${formatTime(slot.end_time)}`;
 const weekdayNames = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
 const priorityColor = (priority: number) => ({ 1: "red", 2: "orange", 3: "geekblue", 4: "default" }[priority] ?? "default");
+const ACTION_VIEW_STORAGE_KEY = "lifeplan-daily-action-picker-view";
 
 export default function DailyList() {
   const [date, setDate] = useState(today);
@@ -46,13 +47,32 @@ export default function DailyList() {
   const isToday = date === today();
   const refreshSlot = (slot: DailyScheduleSlot) => setSchedule((current) => current ? { ...current, slots: current.slots.map((item) => item.id === slot.id ? slot : item) } : current);
 
-  const saveTemplate = async () => { try { const template: DailyTemplateSlot[] = slots.map((slot, index) => ({ start_time: slot.start_time, end_time: slot.end_time, sort_order: index })); await dailyScheduleApi.saveTemplate(template); message.success("已保存为最新模板"); } catch (cause) { setError(userFacingError(cause)); } };
+  const saveTemplate = async () => {
+    const template: DailyTemplateSlot[] = slots.map((slot, index) => ({ start_time: slot.start_time, end_time: slot.end_time, sort_order: index }));
+    const confirmed = await new Promise<boolean>((resolve) => {
+      AntModal.confirm({
+        title: template.length === 0 ? "保存空模板？" : "保存模板？",
+        content: template.length === 0
+          ? "以后首次打开的新日期将不会自动生成时间段；已存在日期和当前日期不受影响。"
+          : "只影响尚未创建日程的未来日期，不会修改任何已存在日期、行动或复盘记录。",
+        okText: "确认保存",
+        cancelText: "取消",
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      });
+    });
+    if (!confirmed) return;
+    try {
+      await dailyScheduleApi.saveTemplate(template);
+      message.success(template.length === 0 ? "已保存空模板" : "已保存模板");
+    } catch (cause) { setError(userFacingError(cause)); }
+  };
   const prepareInsertedSlot = (index: number) => { const before = slots[index]; if (!before) return; const startMinutes = minutesBetween("00:00", before.end_time); if (startMinutes + 60 >= 24 * 60) { message.warning("新增时间段的结束时间不能超过次日 00:00"); return; } const endTime = dayjs(`2000-01-01T${before.end_time}`).add(1, "hour").format("HH:mm"); setInsertPreset({ startTime: before.end_time, endTime }); };
 
   return <div className="page daily-list-page">
     <header className="page-header daily-list-header"><div><Typography.Title level={2} className="page-title">今日事</Typography.Title><Typography.Paragraph className="page-subtitle">按时间安排行动，并在右侧独立记录当天复盘。</Typography.Paragraph></div><div className="daily-date-panel">{isToday && <Tag color="blue" className="daily-today-tag">今天</Tag>}<DatePicker value={dayjs(date)} format="YYYY年MM月DD日" allowClear={false} onChange={(value) => value && setDate(value.format("YYYY-MM-DD"))} /><Typography.Text className="daily-date-context"><span className="daily-weekday-name">{weekdayName}</span></Typography.Text></div></header>
     {error && <Alert className="page-alert" type="error" showIcon message={error} closable onClose={() => setError("")} />}
-    {loading ? <div className="card empty">正在加载…</div> : <>{slots.length === 0 ? <div className="card onboarding-empty"><Empty className="empty" description={<div><Typography.Title level={4}>今天还没有安排行动</Typography.Title><Typography.Paragraph type="secondary">先创建一个时间段，再把要做的行动放进去。</Typography.Paragraph><Space><Button type="primary" icon={<Plus size={15} />} onClick={() => setInsertPreset({})}>新增时间段</Button><Button onClick={() => navigate("/inbox")}>去事件篮记录</Button></Space></div>} /></div> : <ScheduleTable slots={slots} onPlan={setPickerSlot} onReview={(slot) => { if (!slot.action) { message.warning({ content: "请先安排行动", className: "daily-review-toast" }); return; } setSelectedSlot(slot); }} onEditTime={setTimeSlot} onInsert={prepareInsertedSlot} />}<div className="daily-template-action"><div className="daily-template-action-left"><Button type="text" icon={<Plus size={15} />} onClick={() => setInsertPreset({})}>新增时间段</Button><Button type="text" icon={<CalendarDays size={15} />} disabled={slots.length === 0} onClick={() => void saveTemplate()}>保存为模板</Button></div><Button type="text" className="work-log-trigger" icon={<FileText size={15} />} disabled={slots.length === 0} onClick={() => setWorkLogOpen(true)}>工作日志</Button></div></>}
+    {loading ? <div className="card empty">正在加载…</div> : <>{slots.length === 0 ? <div className="card onboarding-empty"><Empty className="empty" description={<div><Typography.Title level={4}>今天还没有安排行动</Typography.Title><Typography.Paragraph type="secondary">先创建一个时间段，再把要做的行动放进去。</Typography.Paragraph><Space><Button type="primary" icon={<Plus size={15} />} onClick={() => setInsertPreset({})}>新增时间段</Button><Button onClick={() => navigate("/inbox")}>去事件篮记录</Button><Button onClick={() => void saveTemplate()}>保存空模板</Button></Space></div>} /></div> : <ScheduleTable slots={slots} onPlan={setPickerSlot} onReview={(slot) => { if (!slot.action) { message.warning({ content: "请先安排行动", className: "daily-review-toast" }); return; } setSelectedSlot(slot); }} onEditTime={setTimeSlot} onInsert={prepareInsertedSlot} />}<div className="daily-template-action"><div className="daily-template-action-left"><Button type="text" icon={<Plus size={15} />} onClick={() => setInsertPreset({})}>新增时间段</Button><Tooltip title="只影响尚未创建日程的未来日期，不修改已有日期"><Button type="text" icon={<CalendarDays size={15} />} onClick={() => void saveTemplate()}>保存模板</Button></Tooltip></div><Button type="text" className="work-log-trigger" icon={<FileText size={15} />} disabled={slots.length === 0} onClick={() => setWorkLogOpen(true)}>工作日志</Button></div></>}
     <ActionPickerModal slot={pickerSlot} slots={slots} actions={pendingActions} onGuideToInbox={() => navigate("/inbox", { state: { guideNewEvent: true } })} onClose={() => setPickerSlot(null)} onStartPomodoro={(action) => { const minutes = Math.max(30, Math.ceil((action.estimated_hours || 0.5) * 60 / 30) * 30); sessionStorage.setItem("lifeplan-pomodoro-prefill", JSON.stringify({ actionId: action.id, plannedSeconds: minutes * 60 })); setPickerSlot(null); navigate("/pomodoro"); }} onAssigned={(assignedSlots) => { setSchedule((current) => current ? { ...current, slots: current.slots.map((item) => assignedSlots.find((assigned) => assigned.id === item.id) ?? item) } : current); setPickerSlot(null); }} />
     <DailySlotModal slot={selectedSlot} onClose={() => setSelectedSlot(null)} onSaved={(slot) => { refreshSlot(slot); setSelectedSlot(slot); }} />
     <TimeSlotModal slot={timeSlot} onClose={() => setTimeSlot(null)} onSaved={async () => { setTimeSlot(null); await load(); }} onDeleted={async () => { setTimeSlot(null); await load(); message.success("时间段已删除"); }} />
@@ -105,6 +125,19 @@ function TimeSlotModal({ slot, onClose, onSaved, onDeleted }: { slot: DailySched
     }
   };
 
+  const split = async () => {
+    setSaving(true);
+    try {
+      await dailyScheduleApi.splitSlot(slot.list_date, slot.id);
+      await onSaved();
+      message.success({ content: "完成拆分", className: "daily-split-message" });
+    } catch (cause) {
+      message.error(userFacingError(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const remove = async () => {
     setSaving(true);
     try {
@@ -117,7 +150,7 @@ function TimeSlotModal({ slot, onClose, onSaved, onDeleted }: { slot: DailySched
     }
   };
 
-  return <AntModal open title={`编辑时间段 · ${slotLabel(slot)}`} onCancel={onClose} footer={null} destroyOnHidden><Form form={form} className="form" layout="vertical" onFinish={(values) => void submit(values)}><div className="form-grid"><Form.Item name="start_time" label="开始时间" rules={[{ required: true, message: "请选择开始时间" }]}><TimePicker format="HH:mm" minuteStep={30} className="full-width" /></Form.Item><Form.Item name="end_time" label="结束时间" dependencies={["start_time"]} rules={[{ required: true, message: "请选择结束时间" }, ({ getFieldValue }) => ({ validator(_, value) { const start = getFieldValue("start_time") as Dayjs | undefined; if (!value || !start || value.isAfter(start)) return Promise.resolve(); return Promise.reject(new Error("结束时间必须晚于开始时间")); } })]}><TimePicker format="HH:mm" minuteStep={30} className="full-width" /></Form.Item></div><div className="form-footer"><Button onClick={onClose}>取消</Button>{slot.action_id ? <Button danger disabled title="请先移除已安排的行动">删除时间段</Button> : <Popconfirm title="确定删除这个时间段吗？" onConfirm={() => void remove()} okText="删除" cancelText="取消"><Button danger loading={saving}>删除时间段</Button></Popconfirm>}<Button type="primary" htmlType="submit" loading={saving}>保存时间段</Button></div></Form></AntModal>;
+  return <AntModal open title={`编辑时间段 · ${slotLabel(slot)}`} onCancel={onClose} footer={null} destroyOnHidden><Form form={form} className="form" layout="vertical" onFinish={(values) => void submit(values)}><div className="form-grid"><Form.Item name="start_time" label="开始时间" rules={[{ required: true, message: "请选择开始时间" }]}><TimePicker format="HH:mm" minuteStep={30} className="full-width" /></Form.Item><Form.Item name="end_time" label="结束时间" dependencies={["start_time"]} rules={[{ required: true, message: "请选择结束时间" }, ({ getFieldValue }) => ({ validator(_, value) { const start = getFieldValue("start_time") as Dayjs | undefined; if (!value || !start || value.isAfter(start)) return Promise.resolve(); return Promise.reject(new Error("结束时间必须晚于开始时间")); } })]}><TimePicker format="HH:mm" minuteStep={30} className="full-width" /></Form.Item></div><div className="form-footer">{slot.action_id ? <Button danger disabled title="请先移除已安排的行动">删除</Button> : <Popconfirm title="确定删除这个时间段吗？" onConfirm={() => void remove()} okText="删除" cancelText="取消"><Button danger loading={saving}>删除</Button></Popconfirm>}{minutesBetween(slot.start_time, slot.end_time) > 30 && <Button onClick={() => void split()} loading={saving}>拆分</Button>}<Button type="primary" htmlType="submit" loading={saving}>保存</Button></div></Form></AntModal>;
 }
 
 function ActionPickerModal({ slot, slots, actions, onGuideToInbox, onClose, onStartPomodoro, onAssigned }: { slot: DailyScheduleSlot | null; slots: DailyScheduleSlot[]; actions: Action[]; onGuideToInbox: () => void; onClose: () => void; onStartPomodoro: (action: Action) => void; onAssigned: (slots: DailyScheduleSlot[]) => void }) {
@@ -125,6 +158,7 @@ function ActionPickerModal({ slot, slots, actions, onGuideToInbox, onClose, onSt
   const [saving, setSaving] = useState(false);
   const [viewing, setViewing] = useState(false);
   const [query, setQuery] = useState("");
+  const [actionView, setActionView] = useState<"flat" | "event">(() => { const saved = localStorage.getItem(ACTION_VIEW_STORAGE_KEY); return saved === "event" ? "event" : "flat"; });
   const [recurringActions, setRecurringActions] = useState<RecurringAction[]>([]);
   const [recurringQuery, setRecurringQuery] = useState("");
   const [editingRecurringAction, setEditingRecurringAction] = useState<RecurringAction | null>(null);
@@ -133,6 +167,7 @@ function ActionPickerModal({ slot, slots, actions, onGuideToInbox, onClose, onSt
     if (!slot) return;
     setMode("existing");
     setQuery("");
+    setActionView((current) => { const saved = localStorage.getItem(ACTION_VIEW_STORAGE_KEY); return saved === "event" ? "event" : current; });
     setRecurringQuery("");
     setEditingRecurringAction(null);
     setViewing(Boolean(slot.action));
@@ -254,7 +289,7 @@ function ActionPickerModal({ slot, slots, actions, onGuideToInbox, onClose, onSt
   if (viewing && slot.action) return <AntModal open title={`行动详情 · ${slotLabel(slot)}`} onCancel={onClose} footer={null} destroyOnHidden><ActionPreview action={slot.action} /><div className="form-footer"><Button onClick={() => setViewing(false)}>更换行动</Button><Button type="primary" onClick={() => slot.action && onStartPomodoro(slot.action)}>开始番茄钟</Button></div></AntModal>;
   return <AntModal open title={`安排行动 · ${slotLabel(slot)}`} onCancel={onClose} footer={null} destroyOnHidden>
     {(mode === "existing" || mode === "recurring" || mode === "new") && <Radio.Group className="daily-picker-radio" value={mode} onChange={(event) => setMode(event.target.value as "existing" | "recurring" | "new")} optionType="button" buttonStyle="solid"><Radio.Button value="existing">项目行动</Radio.Button><Radio.Button value="recurring">重复行动</Radio.Button><Radio.Button value="new">临时行动</Radio.Button></Radio.Group>}
-    {mode === "existing" && (selectableActions.length === 0 ? <div className="daily-action-empty-guide"><div className="daily-action-empty-guide-icon"><ListChecks size={30} strokeWidth={1.8} /></div><Typography.Title level={4}>还没有可以直接安排的行动</Typography.Title><Typography.Paragraph>先把事情拆解成一步步能马上开始的行动，再依次安排到每天，会更容易将事情推进完成。</Typography.Paragraph><div className="daily-action-empty-guide-example"><span>例如</span><span>准备汇报</span><ArrowRight size={14} /><span>整理数据 → 写提纲 → 完成初稿</span></div><Button type="primary" icon={<ArrowRight size={15} />} iconPosition="end" onClick={onGuideToInbox}>去事件篮拆分活动</Button></div> : <><Input allowClear value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索行动标题关键词" /><div className="daily-action-picker-list">{visibleActions.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有符合条件的行动" /> : visibleActions.map((action, index) => <button className={`daily-action-picker-item ${action.id === slot.action_id ? "selected" : ""}`} type="button" key={action.id} onClick={() => void assign(action.id)} disabled={saving}><ActionPreview action={action} index={index + 1} scheduledToday={slots.some((item) => item.action_id === action.id)} /></button>)}</div></>)}
+    {mode === "existing" && (selectableActions.length === 0 ? <div className="daily-action-empty-guide"><div className="daily-action-empty-guide-icon"><ListChecks size={30} strokeWidth={1.8} /></div><Typography.Title level={4}>还没有可以直接安排的行动</Typography.Title><Typography.Paragraph>先把事情拆解成一步步能马上开始的行动，再依次安排到每天，会更容易将事情推进完成。</Typography.Paragraph><div className="daily-action-empty-guide-example"><span>例如</span><span>准备汇报</span><ArrowRight size={14} /><span>整理数据 → 写提纲 → 完成初稿</span></div><Button type="primary" icon={<ArrowRight size={15} />} iconPosition="end" onClick={onGuideToInbox}>去事件篮拆分活动</Button></div> : <><div className="daily-picker-search-row"><Input allowClear value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索行动标题关键词" /><Button type={actionView === "flat" ? "primary" : "default"} ghost={actionView === "flat"} size="middle" icon={<Rows3 size={15} />} aria-label="平铺视图" title="平铺视图" onClick={() => { setActionView("flat"); localStorage.setItem(ACTION_VIEW_STORAGE_KEY, "flat"); }} /><Button type={actionView === "event" ? "primary" : "default"} ghost={actionView === "event"} size="middle" icon={<ListTree size={15} />} aria-label="按事件视图" title="按事件视图" onClick={() => { setActionView("event"); localStorage.setItem(ACTION_VIEW_STORAGE_KEY, "event"); }} /></div><div className={`daily-action-picker-list ${actionView === "event" ? "daily-action-picker-event-list" : ""}`}>{visibleActions.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有符合条件的行动" /> : actionView === "flat" ? visibleActions.map((action, index) => <button className={`daily-action-picker-item ${action.id === slot.action_id ? "selected" : ""}`} type="button" key={action.id} onClick={() => void assign(action.id)} disabled={saving}><ActionPreview action={action} index={index + 1} scheduledToday={slots.some((item) => item.action_id === action.id)} /></button>) : <EventActionPicker actions={visibleActions} slots={slots} saving={saving} onAssign={(id) => void assign(id)} />}</div></>)}
     {mode === "recurring" && <><div className="daily-picker-search-row"><Input allowClear value={recurringQuery} onChange={(event) => setRecurringQuery(event.target.value)} placeholder="搜索重复行动标题" /><Button icon={<Plus size={15} />} onClick={() => setMode("new-recurring")}>新增重复行动</Button></div><div className="daily-action-picker-list">{visibleRecurringActions.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={recurringActions.length === 0 ? "还没有重复行动" : "没有符合条件的重复行动"} /> : visibleRecurringActions.map((action, index) => { const actualIndex = recurringActions.findIndex((item) => item.id === action.id); return <div className="daily-recurring-picker-item" key={action.id}><button className="daily-action-picker-item" type="button" onClick={() => void assignRecurring(action.id)} disabled={saving}><RecurringActionPreview action={action} index={index + 1} /></button><div className="daily-recurring-order-actions"><Button type="text" size="small" aria-label="编辑重复行动" title="编辑" icon={<Pencil size={15} />} disabled={saving} onClick={(event) => { event.stopPropagation(); setEditingRecurringAction(action); setMode("edit-recurring"); }} /><Button type="text" size="small" aria-label="上移重复行动" title="上移" icon={<ChevronUp size={15} />} disabled={actualIndex === 0 || saving} onClick={(event) => { event.stopPropagation(); void moveRecurring(action.id, -1); }} /><Button type="text" size="small" aria-label="下移重复行动" title="下移" icon={<ChevronDown size={15} />} disabled={actualIndex === recurringActions.length - 1 || saving} onClick={(event) => { event.stopPropagation(); void moveRecurring(action.id, 1); }} /></div></div>; })}</div></>}
     {mode === "new" && <NewActionForm onSubmit={async (payload) => { try { const action = await actionsApi.create(payload); await assignAction(action); } catch (cause) { message.error(userFacingError(cause)); } }} />}
     {(mode === "new-recurring" || mode === "edit-recurring") && <NewRecurringActionForm action={editingRecurringAction} onSubmit={mode === "edit-recurring" ? updateRecurring : createRecurring} />}
@@ -280,11 +315,22 @@ function DailySlotModal({ slot, onClose, onSaved }: { slot: DailyScheduleSlot | 
   return <AntModal open title={`时间段详情 · ${slotLabel(slot)}`} onCancel={onClose} footer={null} destroyOnHidden><Form form={form} className="form daily-slot-form" layout="vertical">{slot.action ? <ActionPreview action={slot.action} /> : <div className="daily-action-preview-empty">当前时间段尚未安排行动</div>}<Form.Item name="actual_notes" label="实际工作情况" rules={[{ required: true, whitespace: true, message: "请填写实际工作情况" }]}><Input.TextArea autoSize={{ minRows: 3, maxRows: 5 }} /></Form.Item><div className="form-grid"><Form.Item name="met_expectation" label="是否达到预期" rules={[{ required: true, message: "请选择是否达到预期" }]}><Select options={[{ value: 1, label: "达到预期" }, { value: 0, label: "未达预期" }]} /></Form.Item><Form.Item name="focused" label="是否专注" rules={[{ required: true, message: "请选择是否专注" }]}><Select options={[{ value: 1, label: "专注" }, { value: 0, label: "未专注" }]} /></Form.Item></div><div className="daily-slot-actions"><Space>{slot.action?.status === 0 && <Checkbox checked={completeAfterReview} onChange={(event) => setCompleteAfterReview(event.target.checked)}>已完成行动</Checkbox>}{slot.action?.status === 1 && <Button icon={<RotateCcw size={14} />} onClick={() => void restore()}>恢复行动</Button>}</Space><Space><Button type="primary" onClick={() => void saveReview()} loading={saving}>保存复盘</Button></Space></div></Form></AntModal>;
 }
 
-function ActionPreview({ action, index, scheduledToday = false }: { action: Action; index?: number; scheduledToday?: boolean }) {
+function EventActionPicker({ actions, slots, saving, onAssign }: { actions: Action[]; slots: DailyScheduleSlot[]; saving: boolean; onAssign: (id: number) => void }) {
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
+  const groups = actions.filter((action) => action.status !== 1).reduce<Array<{ key: string; eventTitle: string; projectTitle?: string; actions: Action[] }>>((result, action) => {
+    const key = action.event_id != null ? `event:${action.event_id}` : action.project_id != null ? `project:${action.project_id}` : "unassigned";
+    const existing = result.find((item) => item.key === key);
+    if (existing) existing.actions.push(action);
+    else result.push({ key, eventTitle: action.event_title || "所属事件", projectTitle: action.project_title, actions: [action] });
+    return result;
+  }, []);
+  return <div className="daily-event-action-groups">{groups.map((group) => { const expanded = expandedKeys.has(group.key); return <section className="daily-event-action-group" key={group.key}><button type="button" className="daily-event-action-parent" aria-expanded={expanded} onClick={() => setExpandedKeys((current) => { const next = new Set(current); if (next.has(group.key)) next.delete(group.key); else next.add(group.key); return next; })}><span className="daily-event-action-parent-label">事件：</span><Typography.Text strong className="daily-event-action-parent-title" ellipsis={{ tooltip: group.eventTitle }}>{group.eventTitle}</Typography.Text>{group.actions[0] && <span className="daily-event-action-parent-tags"><Tag color={group.actions[0].importance === 1 ? "orange" : "default"}>{group.actions[0].importance === 1 ? "重要" : "不重要"}</Tag><Tag color={group.actions[0].urgency === 1 ? "red" : "default"}>{group.actions[0].urgency === 1 ? "紧急" : "不紧急"}</Tag></span>}<span className="daily-event-action-count">{group.actions.length}</span>{expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</button>{expanded && <div className="daily-event-action-children">{group.actions.sort((a, b) => a.sort_order - b.sort_order).map((action, index) => <button className={`daily-action-picker-item ${slots.some((item) => item.action_id === action.id) ? "selected" : ""}`} type="button" key={action.id} onClick={() => onAssign(action.id)} disabled={saving}><ActionPreview action={action} index={index + 1} scheduledToday={slots.some((item) => item.action_id === action.id)} hideProjectRelation hideEventActionMeta /></button>)}</div>}</section>; })}</div>;
+}
+function ActionPreview({ action, index, scheduledToday = false, hideProjectRelation = false, hideEventActionMeta = false }: { action: Action; index?: number; scheduledToday?: boolean; hideProjectRelation?: boolean; hideEventActionMeta?: boolean }) {
   const relationLabel = action.project_title ? `所属项目：${action.project_title}` : action.event_title ? `来源事件：${action.event_title}` : "";
   const projectLabel = relationLabel + (action.delegated_to ? ` · 委托给 ${action.delegated_to}` : "");
   const tooltipProps = { color: "#fff", classNames: { root: "daily-action-tooltip" }, styles: { container: { color: "#303133", backgroundColor: "#fff", boxShadow: "0 4px 12px rgba(0, 0, 0, .12)" } } };
-  return <div className="daily-action-preview"><div className={`daily-action-preview-title ${action.status === 1 ? "completed-title" : ""}`}>{index !== undefined && <span className="card-index">{index}.</span>}<Tooltip title={action.title} {...tooltipProps}><span className="daily-action-preview-title-text">{action.title}</span></Tooltip>{scheduledToday && <Tag className="daily-action-scheduled-tag">当日已安排</Tag>}</div><div className="daily-action-preview-tags"><Tag color={priorityColor(action.priority)}>优先级 P{action.priority}</Tag><Tag color={action.estimated_hours <= 0.5 ? "blue" : action.estimated_hours <= 1 ? "cyan" : action.estimated_hours <= 1.5 ? "orange" : "red"}>{action.estimated_hours === 0.5 ? "30 分钟" : `${action.estimated_hours} 小时`}</Tag><Tag color={action.importance === 1 ? "orange" : "default"}>{action.importance === 1 ? "重要" : "不重要"}</Tag><Tag color={action.urgency === 1 ? "red" : "default"}>{action.urgency === 1 ? "紧急" : "不紧急"}</Tag><Tag color={action.status === 1 ? "green" : action.status === 2 ? "red" : "blue"}>{action.status === 1 ? "已完成" : action.status === 2 ? "已放弃" : "待办"}</Tag>{action.is_delegated_follow_up === 1 && <Tag color="gold">委托跟进</Tag>}{action.is_frog === 1 && <Tag color="green">青蛙</Tag>}</div>{(action.start_date || action.deadline) && <div className="daily-action-preview-dates">{action.start_date && <span>开始：{action.start_date}</span>}{action.deadline && <span>截止：{action.deadline}</span>}</div>}{projectLabel && <div className="daily-action-preview-project"><Tooltip title={projectLabel} {...tooltipProps}><span className="daily-action-preview-project-text">{projectLabel}</span></Tooltip></div>}{action.description && <Typography.Paragraph className="daily-action-preview-description">{action.description}</Typography.Paragraph>}</div>;
+  return <div className="daily-action-preview"><div className={`daily-action-preview-title ${action.status === 1 ? "completed-title" : ""}`}>{index !== undefined && <span className="card-index">{index}.</span>}<Tooltip title={action.title} {...tooltipProps}><span className="daily-action-preview-title-text">{action.title}</span></Tooltip>{scheduledToday && <Tag className="daily-action-scheduled-tag">当日已安排</Tag>}</div><div className="daily-action-preview-tags"><Tag color={priorityColor(action.priority)}>优先级 P{action.priority}</Tag><Tag color={action.estimated_hours <= 0.5 ? "blue" : action.estimated_hours <= 1 ? "cyan" : action.estimated_hours <= 1.5 ? "orange" : "red"}>{action.estimated_hours === 0.5 ? "30 分钟" : `${action.estimated_hours} 小时`}</Tag>{hideEventActionMeta ? <>{action.start_date && <Tag color="default">开始：{action.start_date}</Tag>}{action.deadline && <Tag color="default">截止：{action.deadline}</Tag>}</> : <><Tag color={action.importance === 1 ? "orange" : "default"}>{action.importance === 1 ? "重要" : "不重要"}</Tag><Tag color={action.urgency === 1 ? "red" : "default"}>{action.urgency === 1 ? "紧急" : "不紧急"}</Tag><Tag color={action.status === 1 ? "green" : action.status === 2 ? "red" : "blue"}>{action.status === 1 ? "已完成" : action.status === 2 ? "已放弃" : "待办"}</Tag></>}{action.is_delegated_follow_up === 1 && <Tag color="gold">委托跟进</Tag>}{action.is_frog === 1 && <Tag color="green">青蛙</Tag>}</div>{!hideEventActionMeta && (action.start_date || action.deadline) && <div className="daily-action-preview-dates">{action.start_date && <span>开始：{action.start_date}</span>}{action.deadline && <span>截止：{action.deadline}</span>}</div>}{projectLabel && !hideProjectRelation && <div className="daily-action-preview-project"><Tooltip title={projectLabel} {...tooltipProps}><span className="daily-action-preview-project-text">{projectLabel}</span></Tooltip></div>}{action.description && <Typography.Paragraph className="daily-action-preview-description">{action.description}</Typography.Paragraph>}</div>;
 }
 
 function RecurringActionPreview({ action, index }: { action: RecurringAction; index?: number }) {
@@ -308,26 +354,5 @@ function NewActionForm({ onSubmit }: { onSubmit: (payload: NewAction) => Promise
   const [form] = Form.useForm();
   return <Form id="daily-new-action-form" form={form} className="form daily-new-action-form" layout="vertical" onFinish={(values) => void onSubmit({ title: String(values.title), estimated_hours: Number(values.estimated_hours), start_date: values.start_date ? (values.start_date as Dayjs).format("YYYY-MM-DD") : undefined, deadline: values.deadline ? (values.deadline as Dayjs).format("YYYY-MM-DD") : undefined, is_frog: values.is_frog ? 1 : 0, importance: Number(values.importance), urgency: Number(values.urgency) })}><Form.Item name="title" label="行动标题" rules={[{ required: true, message: "请输入行动标题" }]}><Input autoFocus /></Form.Item><div className="form-grid action-modal-grid"><Form.Item name="estimated_hours" label="预计耗时" initialValue={0.5} rules={[{ required: true }]}><Select options={[{ value: 0.5, label: "30 分钟" }, { value: 1, label: "1 小时" }, { value: 1.5, label: "1.5 小时" }, { value: 2, label: "2 小时" }]} /></Form.Item><Form.Item name="start_date" label="开始日期"><DatePicker className="full-width" format="YYYY-MM-DD" /></Form.Item><Form.Item name="deadline" label="截止日期"><DatePicker className="full-width" format="YYYY-MM-DD" /></Form.Item></div><div className="form-grid action-priority-grid"><Form.Item name="importance" label="重要程度" initialValue={1}><Select options={[{ value: 1, label: "重要" }, { value: 0, label: "不重要" }]} /></Form.Item><Form.Item name="urgency" label="紧急程度" initialValue={1}><Select options={[{ value: 1, label: "紧急" }, { value: 0, label: "不紧急" }]} /></Form.Item></div><Form.Item name="is_frog" valuePropName="checked"><Checkbox>标记为青蛙 <FrogHelp /></Checkbox></Form.Item></Form>;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

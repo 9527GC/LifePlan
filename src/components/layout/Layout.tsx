@@ -1,5 +1,6 @@
 import { useEffect, useState, type MouseEvent } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
+import { isFloatingModeSaved, loadWindowGeometry, saveWindowGeometry } from "@/lib/windowPreferences";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { Archive, CalendarCheck, Gift, HelpCircle, Minus, Square, Timer, X } from "lucide-react";
 import { Layout as AntLayout, Menu, Tooltip } from "antd";
@@ -49,6 +50,33 @@ export default function Layout() {
 
   useEffect(() => { track("查看页面", { path: location.pathname }); }, [location.pathname]);
 
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    let disposed = false;
+    let unlistenResize: (() => void) | undefined;
+    let unlistenMove: (() => void) | undefined;
+    const restore = async () => {
+      const saved = loadWindowGeometry();
+      if (saved) {
+        await appWindow.setSize(new PhysicalSize(saved.width, saved.height));
+        await appWindow.setPosition(new PhysicalPosition(saved.x, saved.y));
+      }
+      if (disposed) return;
+      unlistenResize = await appWindow.onResized(async ({ payload }) => {
+        if (isFloatingModeSaved()) return;
+        const position = await appWindow.outerPosition();
+        saveWindowGeometry({ width: payload.width, height: payload.height, x: position.x, y: position.y });
+      });
+      unlistenMove = await appWindow.onMoved(async ({ payload }) => {
+        if (isFloatingModeSaved()) return;
+        const size = await appWindow.innerSize();
+        saveWindowGeometry({ width: size.width, height: size.height, x: payload.x, y: payload.y });
+      });
+    };
+    void restore();
+    return () => { disposed = true; unlistenResize?.(); unlistenMove?.(); };
+  }, []);
+
   const handleLogoClick = () => {
     const now = Date.now();
     const next = [...logoClicks.filter((time) => now - time < 1200), now];
@@ -93,14 +121,6 @@ export default function Layout() {
     <AntLayout><AntLayout.Content className="main-content"><Outlet /></AntLayout.Content></AntLayout>
   </AntLayout>;
 }
-
-
-
-
-
-
-
-
 
 
 

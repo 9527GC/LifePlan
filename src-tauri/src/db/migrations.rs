@@ -116,7 +116,7 @@ CREATE TABLE IF NOT EXISTS daily_schedule_templates (
 );
 CREATE INDEX IF NOT EXISTS idx_daily_schedule_days_space_date ON daily_schedule_days(space_id, list_date);
 CREATE INDEX IF NOT EXISTS idx_daily_schedule_slots_space_date ON daily_schedule_slots(space_id, list_date, sort_order, start_time);
-CREATE INDEX IF NOT EXISTS idx_daily_schedule_templates_space ON daily_schedule_templates(space_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_daily_schedule_templates_space ON daily_schedule_templates(space_id, sort_order); CREATE TABLE IF NOT EXISTS daily_schedule_template_meta ( space_id TEXT PRIMARY KEY REFERENCES local_spaces(space_id), updated_at INTEGER NOT NULL );
 CREATE TABLE IF NOT EXISTS pomodoro_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
@@ -179,4 +179,3 @@ CREATE TABLE IF NOT EXISTS recurring_actions (
 CREATE INDEX IF NOT EXISTS idx_recurring_actions_space_order ON recurring_actions(space_id, deleted_at, sort_order, id);
 PRAGMA foreign_keys = ON;
 "#;
-

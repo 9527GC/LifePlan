@@ -70,6 +70,7 @@ export const dailyScheduleApi = {
   createSlot: (payload: NewDailySlot) => invokeCommand<DailyScheduleSlot>("create_daily_slot", { payload }),
   updateSlot: (payload: UpdateDailySlot) => invokeCommand<DailyScheduleSlot>("update_daily_slot", { payload }),
   deleteSlot: (listDate: string, slotId: number) => invokeCommand<void>("delete_daily_slot", { listDate, slotId }),
+  splitSlot: (listDate: string, slotId: number) => invokeCommand<DailyScheduleSlot[]>("split_daily_slot", { listDate, slotId }),
   assignAction: (slotId: number, actionId?: number) => invokeCommand<DailyScheduleSlot>("assign_daily_slot_action", { slotId, actionId: actionId ?? null }),
   updateReview: (payload: UpdateDailySlotReview) => invokeCommand<DailyScheduleSlot>("update_daily_slot_review", { payload }),
   template: () => invokeCommand<DailyTemplateSlot[]>("get_daily_template"),

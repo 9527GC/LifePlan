@@ -396,6 +396,8 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool, D
 }
 
 fn validate_current_schema(conn: &Connection) -> Result<(), DbError> {
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS daily_schedule_template_meta (space_id TEXT PRIMARY KEY REFERENCES local_spaces(space_id), updated_at INTEGER NOT NULL);")
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
     for (table, columns) in [
         (
             "local_spaces",

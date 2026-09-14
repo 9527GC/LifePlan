@@ -1,6 +1,6 @@
 use crate::commands::{
-    actions, analytics, daily_list, daily_schedule, events, pomodoro, projects, recurring_actions, rewards,
-    system,
+    actions, analytics, daily_list, daily_schedule, events, pomodoro, projects, recurring_actions,
+    rewards, system,
 };
 use crate::db::init_db;
 pub use crate::db::AppState;
@@ -55,6 +55,7 @@ pub fn run() {
             daily_schedule::initialize_daily_schedule,
             daily_schedule::create_daily_slot,
             daily_schedule::update_daily_slot,
+            daily_schedule::split_daily_slot,
             daily_schedule::delete_daily_slot,
             daily_schedule::assign_daily_slot_action,
             daily_schedule::update_daily_slot_review,
@@ -81,5 +82,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-
-

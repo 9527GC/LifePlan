@@ -7,6 +7,7 @@ import { actionsApi, dailyScheduleApi, pomodoroApi } from "@/lib/api";
 import type { Action, PomodoroRecord, PomodoroStatus } from "@/types";
 import { userFacingError } from "@/lib/errors";
 import { track } from "@/lib/analytics";
+import { loadFloatingPosition, loadFloatingSize, saveFloatingMode, saveFloatingPosition, saveFloatingSize } from "@/lib/windowPreferences";
 
 type PomodoroPhase = "work" | "rest";
 type WindowSnapshot = { size: PhysicalSize; position: PhysicalPosition };
@@ -148,6 +149,9 @@ export default function Pomodoro() {
   };
 
   const restoreNativeWindow = async (updateUi = true) => {
+    // 恢复常规窗口前先关闭悬浮状态，避免恢复过程的移动事件覆盖悬浮位置。
+    floatingRef.current = false;
+    saveFloatingMode(false);
     if (isTauriRuntime()) {
       const appWindow = getCurrentWindow();
       const snapshot = floatingSnapshotRef.current;
@@ -168,21 +172,42 @@ export default function Pomodoro() {
   };
 
   const enterFloatingMode = async () => {
+    saveFloatingMode(true);
     if (isTauriRuntime()) {
       const appWindow = getCurrentWindow();
       const [size, position] = await Promise.all([appWindow.innerSize(), appWindow.outerPosition()]);
       floatingSnapshotRef.current = { size, position };
-      await appWindow.setMinSize(new LogicalSize(320, 320));
-      await appWindow.setMaxSize(new LogicalSize(480, 480));
-      await appWindow.setResizable(false);
+      await appWindow.setMinSize(new LogicalSize(240, 240));
+      await appWindow.setMaxSize(new LogicalSize(320, 320));
+      await appWindow.setResizable(true);
       await appWindow.setDecorations(false);
-      await appWindow.setSize(new LogicalSize(360, 360));
+      const savedSize = loadFloatingSize();
+      const width = savedSize ? Math.max(240, Math.min(320, savedSize.width)) : 320;
+      const height = savedSize ? Math.max(240, Math.min(320, savedSize.height)) : 320;
+      await appWindow.setSize(new LogicalSize(width, height));
+      const savedPosition = loadFloatingPosition();
+      if (savedPosition) await appWindow.setPosition(new PhysicalPosition(savedPosition.x, savedPosition.y));
       await appWindow.setAlwaysOnTop(true);
       await appWindow.setFocus();
     }
     setFloatingUi(true);
   };
 
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    const appWindow = getCurrentWindow();
+    let unlistenMove: (() => void) | undefined;
+    let unlistenResize: (() => void) | undefined;
+    void appWindow.onMoved(({ payload }) => {
+      if (floatingRef.current) saveFloatingPosition({ x: payload.x, y: payload.y });
+    }).then((cleanup) => { unlistenMove = cleanup; });
+    void appWindow.onResized(async ({ payload }) => {
+      if (!floatingRef.current) return;
+      const scaleFactor = await appWindow.scaleFactor();
+      saveFloatingSize({ width: payload.width / scaleFactor, height: payload.height / scaleFactor });
+    }).then((cleanup) => { unlistenResize = cleanup; });
+    return () => { unlistenMove?.(); unlistenResize?.(); };
+  }, []);
   const toggleFloatingMode = async () => {
     if (floatingBusy) return;
     setFloatingBusy(true);
@@ -390,6 +415,7 @@ export default function Pomodoro() {
         </div>
       </div>
       {isFloating && <div className="pomodoro-drag-handle" data-tauri-drag-region="true" onMouseDown={(event) => { if (event.button === 0) { event.preventDefault(); void getCurrentWindow().startDragging(); } }} role="button" tabIndex={-1} aria-label="拖动窗口"><span className="pomodoro-drag-dots"><i /><i /><i /><i /><i /><i /></span></div>}
+      {isFloating && (['North', 'South', 'East', 'West', 'NorthEast', 'NorthWest', 'SouthEast', 'SouthWest'] as const).map((direction) => <div key={direction} className={`pomodoro-resize-handle pomodoro-resize-${direction.toLowerCase()}`} onMouseDown={(event) => { if (event.button === 0) { event.preventDefault(); event.stopPropagation(); void getCurrentWindow().startResizeDragging(direction); } }} aria-hidden="true" />)}
     </header>
     {error && <Alert className="page-alert" type="error" showIcon message={error} closable onClose={() => setError("")} />}
     {loading ? <div className="card empty">正在加载…</div> : <div className="pomodoro-grid">
@@ -429,15 +455,6 @@ export default function Pomodoro() {
     <Modal title="记录番茄中断" open={interruptOpen} onCancel={() => setInterruptOpen(false)} okText="保存" cancelText="取消" confirmLoading={interrupting} onOk={() => void form.submit()}><Form form={form} layout="vertical" onFinish={(values) => void submitInterrupt(values)}><Form.Item name="interruptType" label="打断类型" initialValue={0} rules={[{ required: true }]}><Select options={[{ value: 0, label: "内部分心" }, { value: 1, label: "外部干扰" }, { value: 2, label: "紧急事务" }]} /></Form.Item><Form.Item name="reason" label="打断原因"><Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} /></Form.Item></Form></Modal>
   </div>;
 }
-
-
-
-
-
-
-
-
-
 
 
 

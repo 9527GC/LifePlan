@@ -120,7 +120,12 @@ fn ensure_template(conn: &Connection, space_id: &str) -> rusqlite::Result<Vec<Da
             })
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    if slots.is_empty() {
+    let template_initialized: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM daily_schedule_template_meta WHERE space_id = ?1)",
+        [space_id],
+        |row| row.get(0),
+    )?;
+    if slots.is_empty() && !template_initialized {
         slots = DEFAULT_TEMPLATE
             .iter()
             .enumerate()
@@ -262,6 +267,57 @@ pub fn update_daily_slot(
         .ok_or_else(|| "更新时间段后读取失败".into())
 }
 #[tauri::command]
+pub fn split_daily_slot(
+    state: State<'_, AppState>,
+    list_date: String,
+    slot_id: i64,
+) -> Result<Vec<DailyScheduleSlot>, String> {
+    validate_date(&list_date)?;
+    let mut conn = state.db.lock().map_err(|error| error.to_string())?;
+    let space_id = current_space_id(&conn).map_err(|error| error.to_string())?;
+    let (start_time, end_time, sort_order): (String, String, i64) = conn
+        .query_row(
+            "SELECT start_time, end_time, sort_order FROM daily_schedule_slots WHERE id = ?1 AND space_id = ?2 AND list_date = ?3",
+            params![slot_id, space_id, list_date],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "时间段不存在".to_string())?;
+    let start = time_minutes(&start_time).ok_or("时间格式无效")?;
+    let end = time_minutes(&end_time).ok_or("时间格式无效")?;
+    if end - start <= 30 {
+        return Err("时间段必须超过 30 分钟才能拆分".into());
+    }
+    let split_minutes = start + 30;
+    let split_time = format!("{:02}:{:02}", split_minutes / 60, split_minutes % 60);
+    let timestamp = now_millis();
+    let tx = conn.transaction().map_err(|error| error.to_string())?;
+    let changed = tx.execute(
+        "UPDATE daily_schedule_slots SET end_time = ?1, updated_at = ?2 WHERE id = ?3 AND space_id = ?4 AND list_date = ?5",
+        params![split_time, timestamp, slot_id, space_id, list_date],
+    ).map_err(|error| error.to_string())?;
+    if changed == 0 {
+        return Err("时间段不存在".into());
+    }
+    tx.execute(
+        "INSERT INTO daily_schedule_slots (space_id, list_date, start_time, end_time, sort_order, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+        params![space_id, list_date, split_time, end_time, sort_order + 1, timestamp],
+    ).map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+    slot_query(&conn, &list_date)
+        .map_err(|error| error.to_string())
+        .map(|slots| {
+            slots
+                .into_iter()
+                .filter(|slot| {
+                    slot.id == slot_id
+                        || (slot.start_time == split_time && slot.end_time == end_time)
+                })
+                .collect()
+        })
+}
+#[tauri::command]
 pub fn delete_daily_slot(
     state: State<'_, AppState>,
     list_date: String,
@@ -361,9 +417,6 @@ pub fn save_daily_template(
     state: State<'_, AppState>,
     slots: Vec<DailyTemplateSlot>,
 ) -> Result<Vec<DailyTemplateSlot>, String> {
-    if slots.is_empty() {
-        return Err("模板至少需要一个时间段".into());
-    }
     for slot in &slots {
         validate_range(&slot.start_time, &slot.end_time)?;
     }
@@ -381,6 +434,7 @@ pub fn save_daily_template(
     )
     .map_err(|error| error.to_string())?;
     let timestamp = now_millis();
+    tx.execute("INSERT INTO daily_schedule_template_meta (space_id, updated_at) VALUES (?1, ?2) ON CONFLICT(space_id) DO UPDATE SET updated_at = excluded.updated_at", params![space_id, timestamp]).map_err(|error| error.to_string())?;
     for (index, slot) in slots.iter().enumerate() {
         tx.execute("INSERT INTO daily_schedule_templates (space_id, start_time, end_time, sort_order, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)", params![space_id, slot.start_time, slot.end_time, index as i64, timestamp]).map_err(|error| error.to_string())?;
     }

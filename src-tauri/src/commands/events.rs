@@ -478,4 +478,3 @@ pub fn delete_event(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     .map_err(|error| error.to_string())?;
     tx.commit().map_err(|error| error.to_string())
 }
-

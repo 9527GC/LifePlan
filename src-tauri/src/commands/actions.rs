@@ -42,10 +42,11 @@ fn to_sql_error(error: crate::db::DbError) -> rusqlite::Error {
 pub fn list_actions(conn: &Connection) -> rusqlite::Result<Vec<Action>> {
     let space_id = current_space_id(conn).map_err(to_sql_error)?;
     let mut statement = conn.prepare(
-        "SELECT a.id, a.event_id, a.project_id, e.title, p.title, e.delegated_to, a.title, a.description, a.estimated_hours, a.start_date, a.deadline, a.is_frog, COALESCE(p.importance, a.importance), COALESCE(p.urgency, a.urgency), COALESCE(p.priority, a.priority), a.status, a.completed_at, a.is_delegated_follow_up, a.cascade_abandoned, COALESCE(a.sort_order, 0), a.created_at, a.updated_at
+        "SELECT a.id, a.event_id, a.project_id, COALESCE(e.title, pe.title), p.title, COALESCE(e.delegated_to, pe.delegated_to), a.title, a.description, a.estimated_hours, a.start_date, a.deadline, a.is_frog, COALESCE(p.importance, a.importance), COALESCE(p.urgency, a.urgency), COALESCE(p.priority, a.priority), a.status, a.completed_at, a.is_delegated_follow_up, a.cascade_abandoned, COALESCE(a.sort_order, 0), a.created_at, a.updated_at
          FROM actions a
          LEFT JOIN events e ON e.id = a.event_id AND e.space_id = a.space_id AND e.deleted_at IS NULL
          LEFT JOIN projects p ON p.id = a.project_id AND p.space_id = a.space_id AND p.deleted_at IS NULL
+         LEFT JOIN events pe ON pe.id = p.event_id AND pe.space_id = p.space_id AND pe.deleted_at IS NULL
          WHERE a.space_id = ?1 AND a.deleted_at IS NULL
            AND (a.event_id IS NULL OR e.id IS NOT NULL)
            AND (a.project_id IS NULL OR p.id IS NOT NULL)
@@ -252,8 +253,12 @@ pub fn update_action(state: State<'_, AppState>, payload: UpdateAction) -> Resul
                 .optional()
                 .map_err(|error| error.to_string())?;
             let new_date = payload.start_date.as_deref();
-            let fits_previous = previous_date.as_deref().is_none_or(|date| new_date.is_none_or(|value| date <= value));
-            let fits_next = next_date.as_deref().is_none_or(|date| new_date.is_none_or(|value| value <= date));
+            let fits_previous = previous_date
+                .as_deref()
+                .is_none_or(|date| new_date.is_none_or(|value| date <= value));
+            let fits_next = next_date
+                .as_deref()
+                .is_none_or(|date| new_date.is_none_or(|value| value <= date));
             if fits_previous && fits_next {
                 None
             } else {
@@ -532,4 +537,3 @@ pub fn complete_delegated_follow_up(
     }
     tx.commit().map_err(|error| error.to_string())
 }
-

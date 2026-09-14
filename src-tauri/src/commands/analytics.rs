@@ -28,14 +28,25 @@ pub fn record_analytics_event(
 }
 
 #[tauri::command]
-pub fn export_analytics_events(state: State<'_, AppState>) -> Result<Vec<AnalyticsLogEntry>, String> {
+pub fn export_analytics_events(
+    state: State<'_, AppState>,
+) -> Result<Vec<AnalyticsLogEntry>, String> {
     let conn = state.db.lock().map_err(|error| error.to_string())?;
     let mut statement = conn.prepare(
         "SELECT id, event_name, occurred_at, app_version, platform, payload_json FROM analytics_events ORDER BY id ASC",
     ).map_err(|error| error.to_string())?;
-    let rows = statement.query_map([], |row| Ok(AnalyticsLogEntry {
-        id: row.get(0)?, event_name: row.get(1)?, occurred_at: row.get(2)?,
-        app_version: row.get(3)?, platform: row.get(4)?, payload_json: row.get(5)?,
-    })).map_err(|error| error.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|error| error.to_string())
+    let rows = statement
+        .query_map([], |row| {
+            Ok(AnalyticsLogEntry {
+                id: row.get(0)?,
+                event_name: row.get(1)?,
+                occurred_at: row.get(2)?,
+                app_version: row.get(3)?,
+                platform: row.get(4)?,
+                payload_json: row.get(5)?,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
 }
