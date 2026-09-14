@@ -15,7 +15,7 @@
         "title": "LifePlan",
         "width": 1000,
         "height": 650,
-        "minWidth": 1000,
+        "minWidth": 1050,
         "minHeight": 650,
         "visible": true,
         "center": true,

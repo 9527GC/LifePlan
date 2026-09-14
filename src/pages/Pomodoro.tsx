@@ -157,7 +157,7 @@ export default function Pomodoro() {
       const snapshot = floatingSnapshotRef.current;
       await appWindow.setAlwaysOnTop(false);
       await appWindow.setMaxSize(null);
-      await appWindow.setMinSize(new LogicalSize(1000, 650));
+      await appWindow.setMinSize(new LogicalSize(1050, 650));
       // 窗口始终使用自研标题栏，退出悬浮模式时不能恢复系统标题栏。
       await appWindow.setDecorations(false);
       await appWindow.setResizable(true);

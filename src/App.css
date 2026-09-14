@@ -26,7 +26,7 @@ body.pomodoro-floating-mode .app-shell { padding-top: 0; }
 .sidebar .ant-menu-item { margin: 4px 0; width: 132px; height: 36px; line-height: 36px; }
 .sidebar .ant-menu-item a { color: inherit; text-decoration: none; }
 .sidebar-note { display: block; align-items: center; justify-content: flex-start; margin-top: auto; padding: 16px 12px 4px; color: #bfbfbf; line-height: 1.7; font-size: 12px; width: 132px; min-height: 52px; max-height: 82px; box-sizing: border-box; text-align: left; overflow: hidden; text-overflow: ellipsis; -webkit-box-orient: vertical; -webkit-line-clamp: 3; cursor: help; user-select: none; -webkit-user-select: none; }
-.main-content { overflow-x: hidden; overflow-y: auto; height: 100%; min-width: 0; min-height: 0; padding: 24px 0 16px 28px; }
+.main-content { overflow-x: auto; overflow-y: auto; height: 100%; min-width: 0; min-height: 0; padding: 24px 0 16px 28px; }
 .page { display: flex; flex-direction: column; width: min(1120px, 100%); min-width: 0; height: 100%; margin: 0 auto; padding-right: 12px; }
 .pomodoro-page { box-sizing: border-box; padding-right: 28px; }
 .pomodoro-page-header, .pomodoro-grid { width: 100%; box-sizing: border-box; }
@@ -52,13 +52,14 @@ body.pomodoro-floating-mode .app-shell { padding-top: 0; }
 .daily-item-meta .ant-tag { margin: 0; }
 .daily-item-description { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .daily-item-actions { flex: 0 0 auto; justify-content: flex-end; }
-.daily-list-page { min-height: 100%; height: auto; overflow: visible; padding-right: 28px; }
-.daily-schedule-card { flex: 0 0 auto; width: 100%; height: auto; min-height: 0; max-height: none; overflow-x: auto; overflow-y: visible; }
+.daily-list-page { box-sizing: border-box; width: 100%; min-height: 100%; height: auto; overflow: visible; padding-right: 28px; }
+.daily-schedule-card { flex: 0 0 auto; box-sizing: border-box; width: 100%; max-width: 100%; height: auto; min-height: 0; max-height: none; overflow-x: auto; overflow-y: visible; }
 .daily-schedule-body { min-height: max-content; }
 .daily-template-action { display: flex; justify-content: flex-start; padding: 8px 4px 0; }
 .daily-template-action .ant-btn { height: 30px; padding-inline: 6px; color: #1778ff; font-size: 13px; }
 .daily-schedule-head, .daily-schedule-row { display: grid; grid-template-columns: 112px minmax(320px, 1.1fr) minmax(380px, 1.25fr); min-width: 812px; }
 .daily-schedule-head { position: sticky; z-index: 3; top: 0; border-bottom: 1px solid #f0f0f0; color: #1f1f1f; background: #fafafa; font-size: 14px; font-weight: 600; }
+.daily-schedule-head > div, .daily-schedule-row > * { min-width: 0; }
 .daily-schedule-head > div { display: flex; align-items: center; height: 42px; padding: 0 12px; border-right: 1px solid #f0f0f0; line-height: 20px; }
 .daily-schedule-head > div:last-child { border-right: 0; }
 .daily-schedule-row-wrap { height: 40px; min-height: 40px; max-height: 40px; }
@@ -76,11 +77,11 @@ body.pomodoro-floating-mode .app-shell { padding-top: 0; }
 .daily-inline-tags { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; min-width: 0; }
 .daily-inline-tags .ant-tag, .daily-review-pending.ant-tag { display: inline-flex; align-items: center; margin: 0; font-size: 12px; line-height: 21px; }
 .daily-inline-title, .daily-review-summary, .daily-review-placeholder { min-width: 0; margin-left: 7px; overflow: hidden; color: #303133; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
-.daily-review-cell { border-bottom: 1px solid #f0f0f0; color: #595959; background: #fff; }
+.daily-review-cell { display: flex; box-sizing: border-box; width: auto; max-width: none; min-width: 0; padding: 5px 2px; overflow: hidden; border-bottom: 1px solid #f0f0f0; color: #595959; background: #fff; }
 .daily-review-cell:hover { background: #fff; filter: none; }
 .daily-review-cell.reviewed:hover { background: #fff; filter: brightness(.985); }
 .daily-review-cell.empty:hover { background: transparent; filter: none; }
-.daily-review-summary { color: #595959; font-size: 14px; }
+.daily-review-summary { flex: 1 1 auto; width: 0; min-width: 0; max-width: 100%; color: #595959; font-size: 14px; }
 .daily-review-placeholder { color: #bfbfbf; font-size: 14px; }
 .daily-insert-button { position: absolute; z-index: 1; bottom: -9px; left: 0; display: flex; align-items: center; width: 100%; height: 18px; padding: 0; border: 0; background: transparent; cursor: pointer; opacity: 0; transition: opacity .15s ease; }
 .daily-insert-button::before { position: absolute; top: 50%; right: 0; left: 18px; height: 3px; background: #1778ff; content: ""; transform: translateY(-50%); }
@@ -603,8 +604,8 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn { min-width: 0
 
 
 
-.daily-review-cell.empty { justify-content: center; padding: 5px 2px; }
-.daily-review-cell.empty .daily-review-placeholder { display: flex; flex: 1 1 0; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; height: 30px; margin: 0; border: 1px dashed transparent; border-radius: 6px; color: #1778ff; opacity: 0; pointer-events: none; transition: opacity .15s ease, border-color .15s ease, background-color .15s ease; }
+.daily-review-cell.empty { justify-content: center; box-sizing: border-box; width: auto; max-width: none; min-width: 0; padding: 5px 2px; }
+.daily-review-cell.empty .daily-review-placeholder { display: flex; flex: 1 1 auto; align-items: center; justify-content: center; box-sizing: border-box; width: auto; max-width: 100%; min-width: 0; height: 30px; margin: 0; border: 1px dashed transparent; border-radius: 6px; color: #1778ff; opacity: 0; pointer-events: none; transition: opacity .15s ease, border-color .15s ease, background-color .15s ease; }
 .daily-review-cell.empty:hover .daily-review-placeholder { border-color: #91caff; background: #f0f7ff; opacity: 1; pointer-events: auto; }
 .daily-review-toast .ant-message-notice-content { background: #fff; color: #303133; box-shadow: 0 4px 14px rgba(0, 0, 0, .12); }
 

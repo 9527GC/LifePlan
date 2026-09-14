@@ -58,7 +58,7 @@ export default function Layout() {
     const restore = async () => {
       const saved = loadWindowGeometry();
       if (saved) {
-        await appWindow.setSize(new PhysicalSize(saved.width, saved.height));
+        await appWindow.setSize(new PhysicalSize(Math.max(1050, saved.width), Math.max(650, saved.height)));
         await appWindow.setPosition(new PhysicalPosition(saved.x, saved.y));
       }
       if (disposed) return;
