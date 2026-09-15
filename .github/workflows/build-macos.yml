@@ -40,7 +40,6 @@ jobs:
       - name: 构建 macOS 应用
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri -- build --target ${{ matrix.rust_target }} --bundles app
 
       - name: 压缩 APP
@@ -67,5 +66,3 @@ jobs:
           name: LifePlan-macos-${{ matrix.arch }}
           path: LifePlan-macos-${{ matrix.arch }}.zip
           if-no-files-found: error
-
-
