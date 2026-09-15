@@ -13,7 +13,7 @@
     "windows": [
       {
         "title": "LifePlan",
-        "width": 1000,
+        "width": 1050,
         "height": 650,
         "minWidth": 1050,
         "minHeight": 650,
@@ -49,3 +49,4 @@
     }
   }
 }
+
