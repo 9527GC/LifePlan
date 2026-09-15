@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Check, Circle, Clock3, Flag, Inbox, ListChecks, Play, Sparkles, Target, Timer, X } from "lucide-react";
 import { track } from "@/lib/analytics";
+import packageInfo from "../../../package.json";
 
 type OnboardingCarouselProps = { onFinish: () => void };
 
@@ -82,7 +83,7 @@ export default function OnboardingCarousel({ onFinish }: OnboardingCarouselProps
   return <div className="onboarding-overlay" role="dialog" aria-modal="true" aria-label="LifePlan 新用户引导">
     <div className="onboarding-shell">
       <button className="onboarding-close" type="button" aria-label="跳过引导" onClick={finish}><X size={18} /></button>
-      <div className="onboarding-brand"><span className="onboarding-brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><rect x="1.5" y="1.5" width="29" height="29" rx="8" fill="currentColor" /><path d="M15 19V9.5M15 19H21.5" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg></span><span>LifePlan</span></div>
+      <div className="onboarding-brand"><span className="onboarding-brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><rect x="1.5" y="1.5" width="29" height="29" rx="8" fill="currentColor" /><path d="M15 19V9.5M15 19H21.5" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg></span><span>LifePlan</span><span className="onboarding-version">v{packageInfo.version}</span></div>
       <div className="onboarding-progress">{slides.map((item, index) => <button key={item.eyebrow} type="button" className={index === current ? "is-active" : index < current ? "is-done" : ""} onClick={() => setCurrent(index)} aria-label={`第 ${index + 1} 幅引导图`}><span /></button>)}</div>
       <main className="onboarding-content" style={{ "--slide-accent": slide.accent } as CSSProperties}>
         <section className="onboarding-copy">

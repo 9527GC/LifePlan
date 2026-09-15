@@ -7,15 +7,15 @@ const API_KEY_STORAGE = "lifeplan-ai-api-key";
 const API_URL_STORAGE = "lifeplan-ai-api-url";
 const MODEL_STORAGE = "lifeplan-ai-model";
 const CONFIG_VERSION_STORAGE = "lifeplan-ai-config-version";
-const AI_CONFIG_VERSION = "2";
+const AI_CONFIG_VERSION = "3";
 const LOG_TEMPLATE_STORAGE = "lifeplan-ai-log-template";
 const LOG_REQUIREMENTS_STORAGE = "lifeplan-ai-log-requirements";
 const WORK_LOG_STORAGE_PREFIX = "lifeplan-work-log-";
 const DEFAULT_API_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_MODEL = "gpt-5.6-luna";
 const DEFAULT_LOG_REQUIREMENTS = `1. 要求日志正文 150-250 字左右；
-2. 按所属项目分组描述行动完成情况，必须按照“项目-行动”维度罗列，不要按照时间段维度罗列，不要出现“某个时间段安排了某件事”的描述；
-3. 统一使用“已完成、进行中、未完成、已取消或阻塞”等状态；
+2. 必须按照“所属项目或产品-行动”维度罗列，不要按照时间段维度罗列，一个行动算一个条目。不要出现“某个时间段安排了某件事”的描述，不用出现是否专注的描述；
+3. 统一使用“已完成、进行中、已取消或阻塞”等状态，未完成的算作进行中；
 4. 复盘记录中如有与计划事项不一致的实际工作情况，应如实补充说明；
 5. 下一工作日计划列出当日已安排但未完成的行动；
 6. 无待顺延事项时明确写“无待顺延行动”；
@@ -88,6 +88,8 @@ export default function WorkLogModal({ date, slots, onClose }: { date: string; s
     if (!apiKey) setSettingsOpen(true);
     if (localStorage.getItem(CONFIG_VERSION_STORAGE) !== AI_CONFIG_VERSION) {
       localStorage.setItem(CONFIG_VERSION_STORAGE, AI_CONFIG_VERSION);
+      localStorage.setItem(LOG_REQUIREMENTS_STORAGE, DEFAULT_LOG_REQUIREMENTS);
+      setLogRequirements(DEFAULT_LOG_REQUIREMENTS);
       message.info("AI 配置格式已更新，请确认接口地址和模型名称");
     }
   }, [apiKey]);
