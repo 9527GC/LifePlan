@@ -19,6 +19,9 @@ const DEFAULT_LOG_REQUIREMENTS = `1. 要求日志正文 150-250 字左右；
 6. 无待顺延事项时明确写“无待顺延行动”；
 7. 禁止推测或编造完成比例、时间、原因、成果等事实；
 8. 保持专业、简洁、条目化表达，仅输出日志正文。`;
+const MAX_ERROR_DETAIL_LENGTH = 4000;
+type AiError = { summary: string; detail: string; status?: number; url: string; time: string };
+
 const DEFAULT_LOG_TEMPLATE = `一、今日工作及完成情况 (必填)
   1.
   2.
@@ -40,15 +43,29 @@ function buildPrompt(date: string, slots: DailyScheduleSlot[], template: string,
 }
 
 async function generateWorkLog(apiKey: string, apiUrl: string, model: string, date: string, slots: DailyScheduleSlot[], template: string, requirements: string) {
-  const response = await fetch(apiUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model, temperature: 0.7, messages: [{ role: "user", content: buildPrompt(date, slots, template, requirements) }] }),
-  });
-  const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string } };
-  if (!response.ok) throw new Error(payload.error?.message || `AI 请求失败（${response.status}）`);
+  const time = new Date().toLocaleString("zh-CN");
+  let response: Response;
+  try {
+    response = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model, temperature: 0.7, messages: [{ role: "user", content: buildPrompt(date, slots, template, requirements) }] }),
+    });
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    throw { summary: "无法连接 AI 服务，可能是网络、代理、证书或 CORS 限制。", detail, url: apiUrl, time } satisfies AiError;
+  }
+
+  const raw = await response.text();
+  let payload: { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string }; message?: string } = {};
+  try { payload = raw ? JSON.parse(raw) : {}; } catch { /* 服务商返回的可能不是 JSON */ }
+  const responseDetail = (payload.error?.message || payload.message || raw || "服务未返回错误详情").trim().slice(0, MAX_ERROR_DETAIL_LENGTH);
+  if (!response.ok) {
+    const hint = response.status === 400 ? "请求参数不符合服务商要求，请检查模型或接口协议。" : response.status === 401 ? "API Key 无效或未授权。" : response.status === 403 ? "当前 API Key 没有调用权限。" : response.status === 404 ? "接口地址或模型不存在，请检查配置。" : response.status === 429 ? "请求过于频繁或账户额度不足。" : "请根据服务商返回的错误详情检查配置。";
+    throw { summary: `AI 请求失败（HTTP ${response.status}）：${hint}`, detail: responseDetail, status: response.status, url: apiUrl, time } satisfies AiError;
+  }
   const content = payload.choices?.[0]?.message?.content?.trim();
-  if (!content) throw new Error("AI 没有返回工作日志内容");
+  if (!content) throw { summary: "AI 已返回响应，但格式不兼容，未找到 choices[0].message.content。", detail: responseDetail, status: response.status, url: apiUrl, time } satisfies AiError;
   return content;
 }
 
@@ -61,6 +78,7 @@ export default function WorkLogModal({ date, slots, onClose }: { date: string; s
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [content, setContent] = useState(() => localStorage.getItem(`${WORK_LOG_STORAGE_PREFIX}${date}`) || "");
+  const [aiError, setAiError] = useState<AiError | null>(null);
 
   const reviewCount = useMemo(() => slots.filter((slot) => Boolean(slot.actual_notes?.trim()) && slot.met_expectation !== undefined && slot.focused !== undefined).length, [slots]);
   useEffect(() => { setContent(localStorage.getItem(`${WORK_LOG_STORAGE_PREFIX}${date}`) || ""); }, [date]);
@@ -87,8 +105,15 @@ export default function WorkLogModal({ date, slots, onClose }: { date: string; s
     }
     if (!apiKey.trim()) { setSettingsOpen(true); return; }
     setGenerating(true);
+    setAiError(null);
     try { const nextContent = await generateWorkLog(apiKey.trim(), apiUrl.trim() || DEFAULT_API_URL, model.trim() || DEFAULT_MODEL, date, slots, logTemplate.trim() || DEFAULT_LOG_TEMPLATE, logRequirements.trim() || DEFAULT_LOG_REQUIREMENTS); setContent(nextContent); localStorage.setItem(`${WORK_LOG_STORAGE_PREFIX}${date}`, nextContent); }
-    catch (cause) { message.error(String(cause).replace(/^Error: /, "")); }
+    catch (cause) {
+      const error = cause as AiError;
+      const normalized = error?.summary ? error : { summary: "AI 请求失败", detail: cause instanceof Error ? cause.message : String(cause), url: apiUrl, time: new Date().toLocaleString("zh-CN") };
+      setAiError(normalized);
+      console.error("AI 工作日志生成失败", normalized);
+      message.error(normalized.summary);
+    }
     finally { setGenerating(false); }
   };
 
@@ -96,7 +121,8 @@ export default function WorkLogModal({ date, slots, onClose }: { date: string; s
     <Modal className="work-log-modal" wrapClassName="work-log-modal-wrap" open title="工作日志" width={720} style={{ top: 24, marginBottom: 24 }} onCancel={onClose} destroyOnHidden footer={<Space><Button icon={<Settings size={15} />} onClick={() => setSettingsOpen(true)}>AI 配置</Button><Button onClick={onClose}>关闭</Button>{content && <Button type="primary" onClick={() => { void navigator.clipboard?.writeText(content); message.success("日志已复制"); }}>复制日志</Button>}<Button type="primary" loading={generating} onClick={() => void generate()}>{content ? "重新生成" : "生成工作日志"}</Button></Space>}>
       <div className="work-log-meta"><FileText size={17} /><span>{date} · 已填写 {reviewCount}/{slots.length} 个时段复盘</span></div>
       {!apiKey && <Alert type="info" showIcon icon={<KeyRound size={16} />} message="请先接入自己的 AI API Key" description="API Key 仅保存在本机浏览器中，用于调用你配置的 AI 服务。" />}
-      {content ? <Input.TextArea className="work-log-content" value={content} onChange={(event) => { const nextContent = event.target.value; setContent(nextContent); localStorage.setItem(`${WORK_LOG_STORAGE_PREFIX}${date}`, nextContent); }} autoSize={{ minRows: 12, maxRows: 20 }} /> : <Typography.Paragraph type="secondary" className="work-log-empty">点击“生成工作日志”，AI 会根据当天每个时间段的行动与复盘，按指定模板整理成一份约 150-250 字的日志。</Typography.Paragraph>}
+      {aiError && <Alert type="error" showIcon message={aiError.summary} description={<Space direction="vertical" size={4}><Typography.Text>请求地址：{aiError.url}</Typography.Text><Typography.Text>发生时间：{aiError.time}</Typography.Text><Button type="link" onClick={() => Modal.info({ title: "AI 错误详情", width: 680, content: <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 360, overflow: "auto" }}>{aiError.detail}</pre> })}>查看返回详情</Button></Space>} closable onClose={() => setAiError(null)} />}
+      {content ? <Input.TextArea className="work-log-content" value={content} onChange={(event) => { const nextContent = event.target.value; setContent(nextContent); localStorage.setItem(`${WORK_LOG_STORAGE_PREFIX}${date}`, nextContent); }} autoSize={{ minRows: 12, maxRows: 20 }} /> : <Typography.Paragraph type="secondary" className="work-log-empty">点击“生成工作日志”，AI 会根据当天每个时间段的行动与复盘，按指定模板整理成一份日志。</Typography.Paragraph>}
     </Modal>
     <Modal className="ai-settings-modal" wrapClassName="ai-settings-modal-wrap" open={settingsOpen} title="AI 配置" style={{ top: 24, marginBottom: 24 }} onCancel={() => setSettingsOpen(false)} onOk={saveSettings} okText="保存配置" cancelText="取消" destroyOnHidden>
       <Form layout="vertical">
