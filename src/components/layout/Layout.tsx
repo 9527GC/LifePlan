@@ -1,5 +1,5 @@
 import { useEffect, useState, type MouseEvent } from "react";
-import { getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
+import { availableMonitors, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import { isFloatingModeSaved, loadWindowGeometry, saveWindowGeometry } from "@/lib/windowPreferences";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { Archive, CalendarCheck, ArrowDown, Gift, HelpCircle, LoaderCircle, Minus, Square, Timer, X } from "lucide-react";
@@ -76,10 +76,31 @@ export default function Layout() {
     let unlistenResize: (() => void) | undefined;
     let unlistenMove: (() => void) | undefined;
     const restore = async () => {
-      const saved = loadWindowGeometry();
-      if (saved) {
-        await appWindow.setSize(new PhysicalSize(Math.max(1050, saved.width), Math.max(650, saved.height)));
-        await appWindow.setPosition(new PhysicalPosition(saved.x, saved.y));
+      try {
+        const saved = loadWindowGeometry();
+        if (saved) {
+          const size = { width: Math.max(1050, saved.width), height: Math.max(650, saved.height) };
+          const monitors = await availableMonitors();
+          const isVisibleOnAnyMonitor = monitors.some((monitor) => {
+            const left = Math.max(saved.x, monitor.position.x);
+            const top = Math.max(saved.y, monitor.position.y);
+            const right = Math.min(saved.x + size.width, monitor.position.x + monitor.size.width);
+            const bottom = Math.min(saved.y + size.height, monitor.position.y + monitor.size.height);
+            return right - left >= 80 && bottom - top >= 80;
+          });
+
+          await appWindow.setSize(new PhysicalSize(size.width, size.height));
+          if (isVisibleOnAnyMonitor) {
+            await appWindow.setPosition(new PhysicalPosition(saved.x, saved.y));
+          } else {
+            await appWindow.center();
+            const position = await appWindow.outerPosition();
+            saveWindowGeometry({ ...size, x: position.x, y: position.y });
+          }
+        }
+      } catch (error) {
+        // 恢复窗口状态失败时保留 Tauri 的默认居中窗口，避免影响页面正常渲染。
+        console.error("恢复窗口状态失败：", error);
       }
       if (disposed) return;
       unlistenResize = await appWindow.onResized(async ({ payload }) => {
