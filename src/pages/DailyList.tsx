@@ -108,14 +108,23 @@ function ReviewCell({ slot, onClick }: { slot: DailyScheduleSlot; onClick: () =>
 function HalfHourTimePicker({ value, onChange, className }: { value?: Dayjs; onChange?: (value: Dayjs | null) => void; className?: string }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const currentTime = value?.format("HH:mm");
+  useEffect(() => {
+    if (!open || !currentTime) return;
+    const frame = requestAnimationFrame(() => {
+      const selectedOption = listRef.current?.querySelector<HTMLButtonElement>(`[data-time="${currentTime}"]`);
+      selectedOption?.scrollIntoView({ block: "center" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, currentTime]);
   const selectTime = (time: string) => {
     onChange?.(dayjs(`2000-01-01T${time}`));
     setOpen(false);
     requestAnimationFrame(() => triggerRef.current?.focus());
   };
   const selectNow = () => selectTime(toHalfHourTime(dayjs()));
-  return <Dropdown open={open} onOpenChange={setOpen} trigger={["click"]} placement="bottomLeft" popupRender={() => <div className="daily-time-picker-panel"><div className="daily-time-picker-list" role="listbox" aria-label="时间选项">{HALF_HOUR_TIMES.map((time) => <button key={time} type="button" role="option" aria-selected={time === currentTime} className={`daily-time-picker-option ${time === currentTime ? "selected" : ""}`} onClick={() => selectTime(time)}>{time}</button>)}</div><div className="daily-time-picker-footer"><Button type="link" size="small" onClick={selectNow}>此刻</Button></div></div>}><button ref={triggerRef} type="button" className={`daily-time-picker-trigger ${className ?? ""}`} aria-haspopup="listbox" aria-expanded={open}>{currentTime ?? "请选择时间"}</button></Dropdown>;
+  return <Dropdown open={open} onOpenChange={setOpen} trigger={["click"]} placement="bottomLeft" popupRender={() => <div className="daily-time-picker-panel"><div ref={listRef} className="daily-time-picker-list" role="listbox" aria-label="时间选项">{HALF_HOUR_TIMES.map((time) => <button key={time} data-time={time} type="button" role="option" aria-selected={time === currentTime} className={`daily-time-picker-option ${time === currentTime ? "selected" : ""}`} onClick={() => selectTime(time)}>{time}</button>)}</div><div className="daily-time-picker-footer"><Button type="link" size="small" onClick={selectNow}>此刻</Button></div></div>}><button ref={triggerRef} type="button" className={`daily-time-picker-trigger ${className ?? ""}`} aria-haspopup="listbox" aria-expanded={open}>{currentTime ?? "请选择时间"}</button></Dropdown>;
 }
 
 function InsertSlotModal({ date, preset, onClose, onSaved }: { date: string; preset: { startTime?: string; endTime?: string } | null; onClose: () => void; onSaved: () => Promise<void> }) {
