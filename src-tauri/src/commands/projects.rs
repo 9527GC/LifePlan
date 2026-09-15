@@ -99,7 +99,7 @@ pub fn update_project(
     let changed = conn
         .execute(
             "UPDATE projects SET title = ?1, target = ?2, start_date = ?3, deadline = ?4, importance = ?5, urgency = ?6, priority = ?7, updated_at = ?8 WHERE id = ?9 AND space_id = ?10 AND deleted_at IS NULL",
-            params![payload.title.trim(), payload.target.as_deref(), payload.start_date.as_deref(), payload.deadline.as_deref(), payload.importance, payload.urgency, payload.importance * 2 + payload.urgency + 1, now_millis(), payload.id, space_id],
+            params![payload.title.trim(), payload.target.as_deref(), payload.start_date.as_deref(), payload.deadline.as_deref(), payload.importance, payload.urgency, 4 - (payload.importance * 2 + payload.urgency), now_millis(), payload.id, space_id],
         )
         .map_err(|error| error.to_string())?;
     if changed == 0 {
@@ -107,7 +107,7 @@ pub fn update_project(
     }
     conn.execute(
         "UPDATE actions SET importance = ?1, urgency = ?2, priority = ?3, updated_at = ?4 WHERE project_id = ?5 AND space_id = ?6 AND deleted_at IS NULL",
-        params![payload.importance, payload.urgency, payload.importance * 2 + payload.urgency + 1, now_millis(), payload.id, space_id],
+        params![payload.importance, payload.urgency, 4 - (payload.importance * 2 + payload.urgency), now_millis(), payload.id, space_id],
     )
     .map_err(|error| error.to_string())?;
     list_projects(&conn)

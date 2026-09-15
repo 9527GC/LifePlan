@@ -119,6 +119,10 @@ pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
             .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
         return Ok(true);
     }
+    if version == 10 {
+        migrate_priority_levels(conn)?;
+        return Ok(false);
+    }
     if version == migrations::CURRENT_SCHEMA_VERSION {
         validate_current_schema(conn)?;
         remove_obsolete_daily_schedule_slot(conn)?;
@@ -157,6 +161,18 @@ pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
     Err(DbError::MigrationFailed(format!(
         "unsupported or incomplete database schema version {version}"
     )))
+}
+
+fn migrate_priority_levels(conn: &mut Connection) -> Result<(), DbError> {
+    conn.execute_batch(
+        "UPDATE projects SET priority = 4 - (importance * 2 + urgency);
+         UPDATE actions SET priority = 4 - (importance * 2 + urgency);
+         UPDATE recurring_actions SET priority = 4 - (importance * 2 + urgency);",
+    )
+    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    validate_current_schema(conn)
 }
 
 fn create_pomodoro_reward_tables(conn: &Connection) -> Result<(), DbError> {

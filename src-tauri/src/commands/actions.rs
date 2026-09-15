@@ -135,7 +135,7 @@ pub fn create_action(state: State<'_, AppState>, payload: NewAction) -> Result<A
     let conn = state.db.lock().map_err(|error| error.to_string())?;
     let space_id = current_space_id(&conn).map_err(|error| error.to_string())?;
     let timestamp = now_millis();
-    let priority = payload.importance * 2 + payload.urgency + 1;
+    let priority = 4 - (payload.importance * 2 + payload.urgency);
 
     if let Some(event_id) = payload.event_id {
         let (status, project_id, importance, urgency): (i32, Option<i64>, i32, i32) = conn
@@ -150,7 +150,7 @@ pub fn create_action(state: State<'_, AppState>, payload: NewAction) -> Result<A
         }
         conn.execute(
             "INSERT INTO actions (space_id, sync_id, event_id, title, description, estimated_hours, start_date, deadline, is_frog, importance, urgency, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
-            params![space_id, new_uuid(), event_id, payload.title.trim(), payload.description.as_deref(), payload.estimated_hours, payload.start_date.as_deref(), payload.deadline.as_deref(), payload.is_frog, importance, urgency, importance * 2 + urgency + 1, timestamp],
+            params![space_id, new_uuid(), event_id, payload.title.trim(), payload.description.as_deref(), payload.estimated_hours, payload.start_date.as_deref(), payload.deadline.as_deref(), payload.is_frog, importance, urgency, 4 - (importance * 2 + urgency), timestamp],
         )
         .map_err(|error| error.to_string())?;
     } else if let Some(project_id) = payload.project_id {
@@ -164,7 +164,7 @@ pub fn create_action(state: State<'_, AppState>, payload: NewAction) -> Result<A
         if project_status != 0 {
             return Err("已完成或已放弃项目不能新增行动".into());
         }
-        let priority = importance * 2 + urgency + 1;
+        let priority = 4 - (importance * 2 + urgency);
         let sort_order = next_project_sort_order(&conn, project_id, &space_id)
             .map_err(|error| error.to_string())?;
         conn.execute(
@@ -276,7 +276,7 @@ pub fn update_action(state: State<'_, AppState>, payload: UpdateAction) -> Resul
     let changed = conn
         .execute(
             "UPDATE actions SET title = ?1, description = ?2, estimated_hours = ?3, start_date = ?4, deadline = ?5, is_frog = ?6, importance = ?7, urgency = ?8, priority = ?9, sort_order = COALESCE(?10, sort_order), updated_at = ?11 WHERE id = ?12 AND space_id = ?13 AND deleted_at IS NULL",
-            params![payload.title.trim(), payload.description.as_deref(), payload.estimated_hours, payload.start_date.as_deref(), payload.deadline.as_deref(), payload.is_frog, importance, urgency, importance * 2 + urgency + 1, sort_order, now_millis(), payload.id, space_id],
+            params![payload.title.trim(), payload.description.as_deref(), payload.estimated_hours, payload.start_date.as_deref(), payload.deadline.as_deref(), payload.is_frog, importance, urgency, 4 - (importance * 2 + urgency), sort_order, now_millis(), payload.id, space_id],
         )
         .map_err(|error| error.to_string())?;
     if changed == 0 {

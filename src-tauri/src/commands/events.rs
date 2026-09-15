@@ -191,7 +191,7 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
                     payload.deadline.as_deref(),
                     importance,
                     urgency,
-                    importance * 2 + urgency + 1,
+                    4 - (importance * 2 + urgency),
                     timestamp
                 ],
             )
@@ -219,7 +219,7 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
                         payload.deadline.as_deref(),
                         importance,
                         urgency,
-                        importance * 2 + urgency + 1,
+                        4 - (importance * 2 + urgency),
                         timestamp
                     ],
                 )
