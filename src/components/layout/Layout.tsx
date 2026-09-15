@@ -79,7 +79,9 @@ export default function Layout() {
       try {
         const saved = loadWindowGeometry();
         if (saved) {
-          const size = { width: Math.max(1050, saved.width), height: Math.max(650, saved.height) };
+          const scaleFactor = await appWindow.scaleFactor();
+          const minimumSize = { width: Math.ceil(1050 * scaleFactor), height: Math.ceil(650 * scaleFactor) };
+          const size = { width: Math.max(minimumSize.width, saved.width), height: Math.max(minimumSize.height, saved.height) };
           const monitors = await availableMonitors();
           const isVisibleOnAnyMonitor = monitors.some((monitor) => {
             const left = Math.max(saved.x, monitor.position.x);
