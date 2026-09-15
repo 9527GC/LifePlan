@@ -37,6 +37,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQwODc1MUQ1NUVDMTUzQTUKUldTbFU4RmUxVkdIUU9pQWdCVkpVdXppZzVJV0kwU1lvYWl6K1I2azZCcS9oYWMxUURUcWo5N3cK",
+      "endpoints": [
+        "https://github.com/9527GC/LifePlan/releases/latest/download/latest.json"
+      ]
+    }
   }
 }
