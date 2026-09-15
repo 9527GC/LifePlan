@@ -57,7 +57,7 @@ export default function Inbox() {
           <Typography.Paragraph className="page-subtitle">先把脑中的事情放进来，再决定下一步怎么处理。</Typography.Paragraph>
         </div>
         <Form className="quick-add" onFinish={() => void addEvent()}>
-          <Input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="记录一个新事件…" addonAfter={<span onMouseDown={() => { if (!newTitle.trim()) message.info({ content: "请先输入事件名称", className: "quick-add-empty-toast" }); }}><Button type="primary" htmlType="submit" disabled={!newTitle.trim()} icon={<Plus size={15} />}>新增事件</Button></span>} />
+          <Input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="记录一个新事件…" addonAfter={<span className="quick-add-button-wrapper" onClick={(event) => { if (!newTitle.trim()) { event.preventDefault(); event.stopPropagation(); message.open({ type: "info", content: "请先输入事件名称", className: "quick-add-empty-toast" }); } }}><Button type="primary" htmlType="submit" disabled={!newTitle.trim()} icon={<Plus size={15} />}>新增事件</Button></span>} />
         </Form>
       </div>
     </header>
