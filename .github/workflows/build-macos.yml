@@ -2,9 +2,6 @@ name: 构建 macOS ZIP
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
 
 permissions:
   contents: write
@@ -41,6 +38,9 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: 构建 macOS 应用
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri -- build --target ${{ matrix.rust_target }} --bundles app
 
       - name: 压缩 APP
@@ -52,17 +52,20 @@ jobs:
           test -d "$app_path"
           ditto -c -k --sequesterRsrc --keepParent "$app_path" "LifePlan-macos-${{ matrix.arch }}.zip"
 
+      - name: 检查 macOS 更新产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_dir="src-tauri/target/${{ matrix.rust_target }}/release/bundle/macos"
+          find "$bundle_dir" -maxdepth 1 -type f -name '*.app.tar.gz*' -print
+          test "$(find "$bundle_dir" -maxdepth 1 -type f -name '*.app.tar.gz' | wc -l)" -eq 1
+          test "$(find "$bundle_dir" -maxdepth 1 -type f -name '*.app.tar.gz.sig' | wc -l)" -eq 1
+
       - name: 上传 ZIP
         uses: actions/upload-artifact@v4
         with:
           name: LifePlan-macos-${{ matrix.arch }}
           path: LifePlan-macos-${{ matrix.arch }}.zip
           if-no-files-found: error
-
-      - name: 上传 Release 资产
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: LifePlan-macos-${{ matrix.arch }}.zip
 
 

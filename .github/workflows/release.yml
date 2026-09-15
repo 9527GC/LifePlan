@@ -1,0 +1,64 @@
+name: 发布 LifePlan
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 发布 ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Windows x64
+            runner: windows-latest
+            rust_targets: x86_64-pc-windows-msvc
+            args: ""
+          - platform: macOS Apple Silicon
+            runner: macos-14
+            rust_targets: aarch64-apple-darwin
+            args: "--target aarch64-apple-darwin"
+          - platform: macOS Intel
+            runner: macos-14
+            rust_targets: x86_64-apple-darwin
+            args: "--target x86_64-apple-darwin"
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: 安装依赖
+        run: npm ci --no-audit --no-fund
+
+      - name: 构建并发布
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "LifePlan ${{ github.ref_name }}"
+          releaseBody: "请查看本次版本的更新说明。"
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+
