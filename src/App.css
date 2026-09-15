@@ -883,7 +883,7 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn { min-width: 0
 @media (max-width: 480px) {
   .daily-time-picker-panel { width: min(148px, calc(100vw - 32px)); }
 }
-.brand-update-button { display: inline-grid; flex: 0 0 auto; width: 22px; height: 22px; margin-left: -3px; padding: 0; place-items: center; border: 1px solid #b9d9ff; border-radius: 50%; color: #1778ff; background: #f0f7ff; cursor: pointer; transition: color .2s ease, background .2s ease, border-color .2s ease, transform .2s ease; }
+.brand-update-button { display: inline-grid; flex: 0 0 auto; width: 16px; height: 16px; margin-left: -5px; padding: 0; place-items: center; border: 1px solid #b9d9ff; border-radius: 50%; color: #1778ff; background: #f0f7ff; cursor: pointer; transition: color .2s ease, background .2s ease, border-color .2s ease, transform .2s ease; }
 .brand-update-button:hover:not(:disabled) { border-color: #1778ff; color: #fff; background: #1778ff; transform: translateY(-1px); }
 .brand-update-button:focus-visible { outline: 2px solid #91caff; outline-offset: 2px; }
 .brand-update-button:disabled { cursor: wait; opacity: .72; }

@@ -2,7 +2,7 @@ import { useEffect, useState, type MouseEvent } from "react";
 import { getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import { isFloatingModeSaved, loadWindowGeometry, saveWindowGeometry } from "@/lib/windowPreferences";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { Archive, CalendarCheck, Download, Gift, HelpCircle, LoaderCircle, Minus, Square, Timer, X } from "lucide-react";
+import { Archive, CalendarCheck, ArrowDown, Gift, HelpCircle, LoaderCircle, Minus, Square, Timer, X } from "lucide-react";
 import { Layout as AntLayout, Menu, message, Tooltip } from "antd";
 import "@/App.css";
 import { exportAnalyticsLog, track } from "@/lib/analytics";
@@ -54,6 +54,7 @@ export default function Layout() {
   useEffect(() => { track("查看页面", { path: location.pathname }); }, [location.pathname]);
 
   useEffect(() => {
+
     let disposed = false;
 
     void checkForUpdate()
@@ -146,7 +147,7 @@ export default function Layout() {
       </div>
     </div>
     <AntLayout.Sider className="sidebar" width={148} theme="light">
-      <div className="brand" onClick={handleLogoClick} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter") handleLogoClick(); }} aria-label="LifePlan"><span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><rect x="1.5" y="1.5" width="29" height="29" rx="8" fill="currentColor" /><path d="M15 19V9.5M15 19H21.5" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg></span><span>LifePlan</span>{availableUpdate && (<Tooltip title={isInstallingUpdate ? "正在下载并安装更新" : `发现新版本 ${availableUpdate.version}，点击下载更新`}><button type="button" className="brand-update-button" aria-label={isInstallingUpdate ? "正在下载并安装更新" : `下载 LifePlan ${availableUpdate.version} 更新`} disabled={isInstallingUpdate} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); void handleInstallUpdate(); }}>{isInstallingUpdate ? <LoaderCircle className="brand-update-spinner" size={14} /> : <Download size={14} />}</button></Tooltip>)}</div>
+      <div className="brand" onClick={handleLogoClick} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter") handleLogoClick(); }} aria-label="LifePlan"><span className="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><rect x="1.5" y="1.5" width="29" height="29" rx="8" fill="currentColor" /><path d="M15 19V9.5M15 19H21.5" fill="none" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg></span><span>LifePlan</span>{availableUpdate && (<Tooltip title={isInstallingUpdate ? "正在下载并安装更新" : `发现新版本 ${availableUpdate.version}，点击下载更新`}><button type="button" className="brand-update-button" aria-label={isInstallingUpdate ? "正在下载并安装更新" : `下载 LifePlan ${availableUpdate.version} 更新`} disabled={isInstallingUpdate} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); void handleInstallUpdate(); }}>{isInstallingUpdate ? <LoaderCircle className="brand-update-spinner" size={10} /> : <ArrowDown size={10} />}</button></Tooltip>)}</div>
       <Menu mode="inline" selectedKeys={[location.pathname]} items={navItems.map(({ to, icon: Icon, label }) => ({ key: to, label: <NavLink to={to}>{label}</NavLink>, icon: <Icon size={17} /> }))} />
       <Tooltip title={quote} placement="right" mouseEnterDelay={0.2} color="#fff" classNames={{ root: "sidebar-quote-tooltip" }} styles={{ container: { color: "#303133", backgroundColor: "#fff", boxShadow: "0 4px 12px rgba(0, 0, 0, .12)" } }}>
         <div className="sidebar-note" tabIndex={0} onMouseDown={(event) => event.preventDefault()} onDoubleClick={refreshQuote} aria-label="双击更换名言警句">{quote}</div>
@@ -155,4 +156,3 @@ export default function Layout() {
     <AntLayout><AntLayout.Content className="main-content"><Outlet /></AntLayout.Content></AntLayout>
   </AntLayout>;
 }
-
