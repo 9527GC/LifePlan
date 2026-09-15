@@ -809,3 +809,77 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn { min-width: 0
 .daily-split-message .ant-message-notice-content { background: #fff; color: #303133; border: 1px solid #e5e7eb; box-shadow: 0 4px 12px rgba(0, 0, 0, .08); }
 
 .quick-add-empty-toast .ant-message-notice-content { background: #fff; color: #303133; box-shadow: 0 4px 12px rgba(0, 0, 0, .08); }
+.process-action-modal-wrap .process-action-modal .form-footer {
+  justify-content: space-between;
+  align-items: center;
+}
+.process-action-modal-wrap .process-action-modal .form-footer-actions {
+  display: flex;
+  gap: 8px;
+}
+
+
+/* 今日事组合时间选择器：半小时刻度单列展示，点击后立即完成选择。 */
+.daily-time-picker-trigger {
+  display: block;
+  width: 100%;
+  height: 32px;
+  padding: 4px 11px;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  color: rgba(0, 0, 0, .88);
+  background: #fff;
+  font: inherit;
+  line-height: 22px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .2s, box-shadow .2s;
+}
+.daily-time-picker-trigger:hover,
+.daily-time-picker-trigger:focus-visible {
+  border-color: #4096ff;
+  outline: 0;
+  box-shadow: 0 0 0 2px rgba(5, 145, 255, .1);
+}
+.daily-time-picker-panel {
+  width: 148px;
+  overflow: hidden;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .12);
+}
+.daily-time-picker-list {
+  max-height: 260px;
+  padding: 4px;
+  overflow-y: auto;
+}
+.daily-time-picker-option {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  border: 0;
+  border-radius: 6px;
+  color: rgba(0, 0, 0, .88);
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+.daily-time-picker-option:hover,
+.daily-time-picker-option.selected {
+  color: #1677ff;
+  background: #e6f4ff;
+}
+.daily-time-picker-footer {
+  display: flex;
+  justify-content: center;
+  padding: 4px;
+  border-top: 1px solid #f0f0f0;
+}
+.daily-time-picker-footer .ant-btn {
+  width: 100%;
+}
+@media (max-width: 480px) {
+  .daily-time-picker-panel { width: min(148px, calc(100vw - 32px)); }
+}
