@@ -891,3 +891,5 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn { min-width: 0
 @keyframes brand-update-rotate { to { transform: rotate(360deg); } }
 
 .quick-add-button-wrapper { display: inline-block; position: relative; z-index: 2; }
+.quick-add-button-overlay { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: not-allowed; }
+.quick-add-button-overlay:focus-visible { outline: 2px solid #91caff; outline-offset: 2px; }

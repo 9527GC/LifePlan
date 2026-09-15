@@ -43,6 +43,7 @@ export default function Inbox() {
   const visibleEvents = useMemo(() => { const status: Record<Exclude<InboxTab, "projects">, number> = { pending: 0, delegated: 2, delayed: 3, abandoned: 4, completed: 5 }; return events.filter((event) => filter !== "projects" && event.status === status[filter]); }, [events, filter]);
   const counts = useMemo(() => ({ pending: events.filter((event) => event.status === 0).length, delegated: events.filter((event) => event.status === 2).length, delayed: events.filter((event) => event.status === 3).length, abandoned: events.filter((event) => event.status === 4).length, completed: events.filter((event) => event.status === 5).length, projects: events.filter((event) => event.status === 1).length }), [events]);
   const addEvent = async () => { if (!newTitle.trim()) return; try { await eventsApi.create({ title: newTitle.trim() }); track("创建事件"); setNewTitle(""); await load(); message.success("事件已添加"); } catch (cause) { setError(userFacingError(cause)); } };
+  const showEmptyTitleMessage = () => { message.open({ type: "info", content: "请先输入事件名称", className: "quick-add-empty-toast" }); };
   const updateTitle = async (values: { title: string }) => { if (!editing) return; try { await eventsApi.update({ id: editing.id, title: values.title.trim() }); setEditing(null); await load(); message.success("事件已更新"); } catch (cause) { setError(userFacingError(cause)); } };
   const runProcess = async (payload: ProcessEvent) => { try { await eventsApi.process(payload); track("事件转项目", { decision: payload.decision }); setProcessing(null); setFilter(payload.decision === "self" ? "projects" : payload.decision === "delegate" ? "delegated" : payload.decision === "delay" ? "delayed" : "abandoned"); await load(); message.success("事件处理完成"); } catch (cause) { setError(userFacingError(cause)); } };
   const remove = async (item: Event) => { try { await eventsApi.delete(item.id); await load(); message.success("事件已删除"); } catch (cause) { setError(userFacingError(cause)); } };
@@ -57,7 +58,7 @@ export default function Inbox() {
           <Typography.Paragraph className="page-subtitle">先把脑中的事情放进来，再决定下一步怎么处理。</Typography.Paragraph>
         </div>
         <Form className="quick-add" onFinish={() => void addEvent()}>
-          <Input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="记录一个新事件…" addonAfter={<span className="quick-add-button-wrapper" onClick={(event) => { if (!newTitle.trim()) { event.preventDefault(); event.stopPropagation(); message.open({ type: "info", content: "请先输入事件名称", className: "quick-add-empty-toast" }); } }}><Button type="primary" htmlType="submit" disabled={!newTitle.trim()} icon={<Plus size={15} />}>新增事件</Button></span>} />
+          <Input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} placeholder="记录一个新事件…" addonAfter={<span className="quick-add-button-wrapper"><Button type="primary" htmlType="submit" disabled={!newTitle.trim()} icon={<Plus size={15} />}>新增事件</Button>{!newTitle.trim() && <button className="quick-add-button-overlay" type="button" aria-label="请先输入事件名称" onClick={showEmptyTitleMessage} />}</span>} />
         </Form>
       </div>
     </header>
