@@ -6,7 +6,10 @@ on:
     tags:
       - 'v*'
 
-permissions:`r`n  contents: write`r`n`r`njobs:
+permissions:
+  contents: write
+
+jobs:
   build-macos:
     name: 构建 macOS ${{ matrix.arch }}
     runs-on: macos-14
