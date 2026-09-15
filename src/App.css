@@ -807,3 +807,5 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn { min-width: 0
 .daily-event-action-parent-tags .ant-tag { margin: 0; }
 .daily-event-action-parent-title { flex: 0 1 auto; max-width: min(52%, 360px); }
 .daily-split-message .ant-message-notice-content { background: #fff; color: #303133; border: 1px solid #e5e7eb; box-shadow: 0 4px 12px rgba(0, 0, 0, .08); }
+
+.quick-add-empty-toast .ant-message-notice-content { background: #fff; color: #303133; box-shadow: 0 4px 12px rgba(0, 0, 0, .08); }
