@@ -20,6 +20,9 @@ pub mod models;
 
 fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        if window.is_minimized()? {
+            window.unminimize()?;
+        }
         window.show()?;
         window.set_focus()?;
     }
@@ -146,4 +149,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-
