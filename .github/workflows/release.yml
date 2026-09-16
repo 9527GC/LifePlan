@@ -8,9 +8,68 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: lifeplan-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
-  release:
-    name: 发布 ${{ matrix.platform }}
+  prepare:
+    name: 校验版本并生成更新日志
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.context.outputs.tag }}
+      version: ${{ steps.context.outputs.version }}
+      date: ${{ steps.context.outputs.date }}
+    steps:
+      - name: 检出标签代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 生成发布上下文
+        id: context
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          node scripts/release/prepare-release.mjs \
+            --tag "$GITHUB_REF_NAME" \
+            --repository "$GITHUB_REPOSITORY" \
+            --default-branch "${{ github.event.repository.default_branch }}" \
+            --context-file release-context.json \
+            --github-output "$GITHUB_OUTPUT" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: 提交自动更新的 CHANGELOG
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if git diff --quiet -- CHANGELOG.md; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "docs: 自动更新 CHANGELOG $TAG [skip changelog]"
+          git push origin "HEAD:refs/heads/$DEFAULT_BRANCH"
+
+      - name: 上传发布上下文
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-context
+          path: release-context.json
+          if-no-files-found: error
+
+  build:
+    name: 构建 ${{ matrix.platform }}
+    needs: prepare
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -18,20 +77,24 @@ jobs:
         include:
           - platform: Windows x64
             runner: windows-latest
-            rust_targets: x86_64-pc-windows-msvc
+            rust_target: x86_64-pc-windows-msvc
             args: ""
+            artifact_name: release-windows-x64
           - platform: macOS Apple Silicon
             runner: macos-14
-            rust_targets: aarch64-apple-darwin
+            rust_target: aarch64-apple-darwin
             args: "--target aarch64-apple-darwin"
+            artifact_name: release-macos-arm64
           - platform: macOS Intel
             runner: macos-14
-            rust_targets: x86_64-apple-darwin
+            rust_target: x86_64-apple-darwin
             args: "--target x86_64-apple-darwin"
-
+            artifact_name: release-macos-x64
     steps:
-      - name: 检出代码
+      - name: 检出标签代码
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
 
       - name: 设置 Node.js
         uses: actions/setup-node@v4
@@ -42,22 +105,37 @@ jobs:
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust_targets }}
+          targets: ${{ matrix.rust_target }}
 
       - name: 安装依赖
         run: npm ci --no-audit --no-fund
 
-      - name: 构建并发布
-        uses: tauri-apps/tauri-action@v1
+      - name: 构建 Tauri 产物
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri -- build ${{ matrix.args }}
+
+      - name: 收集 Windows 发布资产
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          Get-ChildItem -Path src-tauri/target -Recurse -File |
+            Where-Object { $_.Name -match '\.(exe|sig)$' -or $_.Name -eq 'latest.json' } |
+            Copy-Item -Destination release-assets -Force
+
+      - name: 收集 macOS 发布资产
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          find src-tauri/target -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.sig' -o -name 'latest.json' \) -exec cp {} release-assets/ \;
+
+      - name: 上传构建资产
+        uses: actions/upload-artifact@v4
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "LifePlan ${{ github.ref_name }}"
-          releaseBody: "请查看本次版本的更新说明。"
-          releaseDraft: false
-          prerelease: false
-          uploadUpdaterJson: true
-          updaterJsonPreferNsis: true
-          args: ${{ matrix.args }}
+          name: ${{ matrix.artifact_name }}
+          path: release-assets
+          if-no-files-found: error
