@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { Alert, Button, Form, Input, Modal, Space, Typography, message } from "antd";
 import { FileText, KeyRound, Settings } from "lucide-react";
 import type { DailyScheduleSlot } from "@/types";
@@ -34,6 +35,18 @@ const DEFAULT_LOG_TEMPLATE = `一、今日工作及完成情况 (必填)
   2.`;
 
 const readSetting = (key: string, fallback: string) => localStorage.getItem(key) || fallback;
+
+function validateAiApiUrl(apiUrl: string) {
+  let parsed: URL;
+  try { parsed = new URL(apiUrl); } catch { throw new Error("接口地址格式不正确，请填写完整的 HTTPS 地址。"); }
+  const hostname = parsed.hostname.toLowerCase().replace(/[\[\]]/g, "");
+  if (parsed.protocol !== "https:") throw new Error("为保护 API Key，只允许使用 HTTPS 接口地址。");
+  if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "::1" || hostname === "0.0.0.0" || hostname === "127.0.0.1") throw new Error("不允许使用 localhost 或本机回环地址作为 AI 接口。");
+  if (/^(10|127)\.(\d{1,3}\.){2}\d{1,3}$/.test(hostname) || /^192\.168\.(\d{1,3})\.\d{1,3}$/.test(hostname) || /^169\.254\.(\d{1,3})\.\d{1,3}$/.test(hostname)) throw new Error("不允许使用内网或链路本地 IPv4 地址作为 AI 接口。");
+  const private172 = hostname.match(/^172\.(\d{1,3})\.(\d{1,3})\.\d{1,3}$/);
+  if (private172 && Number(private172[1]) >= 16 && Number(private172[1]) <= 31) throw new Error("不允许使用内网 IPv4 地址作为 AI 接口。");
+  if (hostname.includes(":") && /^(fc|fd|fe8|fe9|fea|feb)/.test(hostname)) throw new Error("不允许使用内网 IPv6 地址作为 AI 接口。");
+}
 function buildPrompt(date: string, slots: DailyScheduleSlot[], template: string, requirements: string) {
   const details = slots.map((slot, index) => {
     const action = slot.action?.title || "未安排行动";
@@ -45,13 +58,14 @@ function buildPrompt(date: string, slots: DailyScheduleSlot[], template: string,
 }
 
 async function generateWorkLog(apiKey: string, apiUrl: string, model: string, date: string, slots: DailyScheduleSlot[], template: string, requirements: string) {
+  validateAiApiUrl(apiUrl);
   const time = new Date().toLocaleString("zh-CN");
   let response: Response;
   try {
-    response = await fetch(apiUrl, {
+    response = await (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window ? tauriFetch : fetch)(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, temperature: 0.7, messages: [{ role: "user", content: buildPrompt(date, slots, template, requirements) }] }),
+      body: JSON.stringify({ model, temperature: 0.7, stream: false, messages: [{ role: "user", content: buildPrompt(date, slots, template, requirements) }] }),
     });
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause);
