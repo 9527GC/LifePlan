@@ -121,17 +121,56 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release-assets | Out-Null
-          Get-ChildItem -Path src-tauri/target -Recurse -File |
-            Where-Object { $_.Name -match '\.(exe|sig)$' -or $_.Name -eq 'latest.json' } |
-            Copy-Item -Destination release-assets -Force
+          $assets = Get-ChildItem -Path src-tauri/target -Recurse -File |
+            Where-Object {
+              $_.FullName -match '[\\/]bundle[\\/]nsis[\\/]' -and
+              ($_.Name -match '\.exe$' -or $_.Name -match '\.nsis\.zip(?:\.sig)?$')
+            }
+          if (-not $assets) { throw '未找到 Windows NSIS 安装包或更新包。' }
+          $assets | Copy-Item -Destination release-assets -Force
 
       - name: 收集 macOS 发布资产
         if: runner.os == 'macOS'
         shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          find src-tauri/target -type f \( -name '*.dmg' -o -name '*.zip' -o -name '*.sig' -o -name 'latest.json' \) -exec cp {} release-assets/ \;
+          copy_with_target_suffix() {
+            local source="$1"
+            local name
+            local stem
+            local extension
+            name="$(basename "$source")"
+            if [[ "$name" == *aarch64* || "$name" == *arm64* || "$name" == *x86_64* || "$name" == *x64* ]]; then
+              cp "$source" "release-assets/$name"
+              return
+            fi
+            if [[ "$name" == *.app.tar.gz.sig ]]; then
+              stem="${name%.app.tar.gz.sig}"
+              extension=".app.tar.gz.sig"
+            elif [[ "$name" == *.app.tar.gz ]]; then
+              stem="${name%.app.tar.gz}"
+              extension=".app.tar.gz"
+            else
+              stem="${name%.dmg}"
+              extension=".dmg"
+            fi
+            cp "$source" "release-assets/${stem}_${RUST_TARGET}${extension}"
+          }
+          while IFS= read -r -d '' file; do
+            copy_with_target_suffix "$file"
+          done < <(
+            find src-tauri/target -type f \( \
+              \( -path '*/bundle/dmg/*' -a -name '*.dmg' \) -o \
+              \( -path '*/bundle/macos/*' -a \( -name '*.app.tar.gz' -o -name '*.app.tar.gz.sig' \) \) \
+            \) -print0
+          )
+          if ! find release-assets -maxdepth 1 -type f -print -quit | grep -q .; then
+            echo '未找到 macOS DMG 安装包或更新包。' >&2
+            exit 1
+          fi
 
       - name: 上传构建资产
         uses: actions/upload-artifact@v4
@@ -139,3 +178,51 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: release-assets
           if-no-files-found: error
+
+  publish:
+    name: 汇总并发布 GitHub Release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载发布上下文
+        uses: actions/download-artifact@v4
+        with:
+          name: release-context
+          path: release-context
+
+      - name: 下载全部构建资产
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-{windows-x64,macos-arm64,macos-x64}
+          path: downloaded-assets
+          merge-multiple: false
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 检出发布脚本
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: 校验资产并生成 Release 正文
+        run: |
+          node scripts/release/validate-release-assets.mjs \
+            --context-file release-context/release-context.json \
+            --assets-dir downloaded-assets \
+            --output-dir release-upload \
+            --body-file release-body.md
+
+      - name: 创建或更新 Release 并上传资产
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "LifePlan $TAG" --notes-file release-body.md --latest
+          else
+            gh release create "$TAG" --title "LifePlan $TAG" --notes-file release-body.md --latest
+          fi
+          gh release upload "$TAG" release-upload/* --clobber
