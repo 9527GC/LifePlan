@@ -4,11 +4,27 @@ use crate::commands::{
 };
 use crate::db::init_db;
 pub use crate::db::AppState;
-use tauri::Manager;
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Manager, WindowEvent,
+};
+
+const MAIN_WINDOW_LABEL: &str = "main";
+const OPEN_WINDOW_MENU_ID: &str = "open-window";
+const QUIT_MENU_ID: &str = "quit";
 
 pub mod commands;
 pub mod db;
 pub mod models;
+
+fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        window.show()?;
+        window.set_focus()?;
+    }
+    Ok(())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -20,10 +36,55 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(app_state)
         .setup(|app| {
-            if let Some(window) = app.get_webview_window("main") {
-                window.show()?;
-                window.set_focus()?;
+            let open_window =
+                MenuItem::with_id(app, OPEN_WINDOW_MENU_ID, "打开窗口", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, QUIT_MENU_ID, "退出", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open_window, &quit])?;
+            let icon = app
+                .default_window_icon()
+                .cloned()
+                .ok_or_else(|| tauri::Error::AssetNotFound("未找到应用图标".into()))?;
+
+            TrayIconBuilder::with_id("main-tray")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .icon(icon)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    OPEN_WINDOW_MENU_ID => {
+                        if let Err(error) = show_main_window(app) {
+                            eprintln!("显示主窗口失败：{error}");
+                        }
+                    }
+                    QUIT_MENU_ID => app.exit(0),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        if let Err(error) = show_main_window(tray.app_handle()) {
+                            eprintln!("显示主窗口失败：{error}");
+                        }
+                    }
+                })
+                .build(app)?;
+
+            if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+                let window_for_close_event = window.clone();
+                window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        if let Err(error) = window_for_close_event.hide() {
+                            eprintln!("隐藏主窗口失败：{error}");
+                        }
+                    }
+                });
             }
+
+            show_main_window(app.handle())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
