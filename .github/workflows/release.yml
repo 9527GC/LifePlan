@@ -193,17 +193,21 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: release-context
-          path: release-context
+          path: release-context-download
 
       - name: 整理发布上下文
         shell: bash
         run: |
           set -euo pipefail
-          if [ -f release-context.json ]; then
-            mkdir -p release-context
-            mv release-context.json release-context/release-context.json
+          mkdir -p release-context
+          context_file="$(find release-context-download -type f -name 'release-context.json' -print -quit)"
+          if [ -z "$context_file" ]; then
+            echo '未找到 release-context.json，当前下载目录如下：' >&2
+            find release-context-download -maxdepth 3 -print >&2 || true
+            exit 1
           fi
-          test -f release-context/release-context.json
+          cp "$context_file" release-context/release-context.json
+          test -s release-context/release-context.json
 
       - name: 下载全部构建资产
         uses: actions/download-artifact@v4
