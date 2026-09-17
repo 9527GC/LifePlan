@@ -137,9 +137,8 @@ test("汇总脚本生成 latest.json 并去重同名同内容签名", () => {
     writeAsset("metadata/latest.json", "{\"legacy\":true}");
     writeAsset("duplicate/latest.json", "{\"legacy\":true}");
     writeAsset("windows/LifePlan_1.0.5_x64-setup.exe", "windows-installer");
-    writeAsset("windows/LifePlan_1.0.5_x64-setup.nsis.zip", "windows-updater");
-    writeAsset("windows/LifePlan_1.0.5_x64-setup.nsis.zip.sig", "windows-signature");
-    writeAsset("duplicate/LifePlan_1.0.5_x64-setup.nsis.zip.sig", "windows-signature");
+    writeAsset("windows/LifePlan_1.0.5_x64-setup.exe.sig", "windows-signature");
+    writeAsset("duplicate/LifePlan_1.0.5_x64-setup.exe.sig", "windows-signature");
     writeAsset("mac-arm/LifePlan_1.0.5_aarch64-apple-darwin.dmg", "mac-arm-installer");
     writeAsset("mac-arm/LifePlan_1.0.5_aarch64-apple-darwin.app.tar.gz", "mac-arm-updater");
     writeAsset("mac-arm/LifePlan_1.0.5_aarch64-apple-darwin.app.tar.gz.sig", "mac-arm-signature");
@@ -161,7 +160,7 @@ test("汇总脚本生成 latest.json 并去重同名同内容签名", () => {
     assert.equal(latest.platforms["darwin-aarch64"].signature, "mac-arm-signature");
     assert.equal(latest.platforms["darwin-x86_64"].signature, "mac-x64-signature");
     assert.match(readFileSync(bodyFile, "utf8"), /下载 Windows 安装包/);
-    assert.equal(readFileSync(join(outputDirectory, "LifePlan_1.0.5_x64-setup.nsis.zip.sig"), "utf8"), "windows-signature");
+    assert.equal(readFileSync(join(outputDirectory, "LifePlan_1.0.5_x64-setup.exe.sig"), "utf8"), "windows-signature");
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }
