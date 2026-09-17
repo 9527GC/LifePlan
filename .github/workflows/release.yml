@@ -124,9 +124,13 @@ jobs:
           $assets = Get-ChildItem -Path src-tauri/target -Recurse -File |
             Where-Object {
               $_.FullName -match '[\\/]bundle[\\/]' -and
-              ($_.Name -match '\.exe$' -or $_.Name -match '\.(?:nsis|msi)\.zip(?:\.sig)?$')
+              ($_.Name -match '\.(?:exe|msi)$' -or $_.Name -match '\.zip(?:\.sig)?$')
             }
-          if (-not $assets) { throw '未找到 Windows NSIS 安装包或更新包。' }
+          if (-not $assets) {
+            Write-Host 'Windows bundle 目录文件：'
+            Get-ChildItem -Path src-tauri/target -Recurse -File | Where-Object { $_.FullName -match '[\\/]bundle[\\/]' } | ForEach-Object { Write-Host $_.FullName }
+            throw '未找到 Windows 安装包或更新包。'
+          }
           $assets | Copy-Item -Destination release-assets -Force
 
       - name: 收集 macOS 发布资产

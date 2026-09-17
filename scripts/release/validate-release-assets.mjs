@@ -77,7 +77,7 @@ async function createLatestJson(context, files, outputDirectory) {
     {
       platform: "windows-x86_64",
       description: "Windows 更新包",
-      bundle: chooseUpdaterBundle(files, /\.(?:nsis|msi)\.zip$/iu, "Windows 更新包"),
+      bundle: chooseUpdaterBundle(files, /\.zip$/iu, "Windows 更新包"),
     },
     {
       platform: "darwin-aarch64",
@@ -143,7 +143,7 @@ async function main() {
   if (assets.signatures.length === 0) throw new Error("未找到 updater 签名文件（.sig）。");
 
   const updaterBundles = [
-    chooseUpdaterBundle(files, /\.(?:nsis|msi)\.zip$/iu, "Windows 更新包"),
+    chooseUpdaterBundle(files, /\.zip$/iu, "Windows 更新包"),
     chooseUpdaterBundle(files, /(?:aarch64|arm64).*\.app\.tar\.gz$/iu, "macOS Apple Silicon 更新包"),
     chooseUpdaterBundle(files, /(?:x86_64|x64).*\.app\.tar\.gz$/iu, "macOS Intel 更新包"),
   ];
