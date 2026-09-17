@@ -237,22 +237,26 @@ pub fn update_action(state: State<'_, AppState>, payload: UpdateAction) -> Resul
                     |row| row.get(0),
                 )
                 .map_err(|error| error.to_string())?;
+            // 查询可能命中“未设置开始日期”的相邻行动：显式读取 Option<String>，
+            // 再将“无相邻行动”和“相邻行动日期为空”统一为 None。
             let previous_date: Option<String> = conn
                 .query_row(
                     "SELECT start_date FROM actions WHERE project_id = ?1 AND space_id = ?2 AND deleted_at IS NULL AND id <> ?3 AND sort_order < ?4 ORDER BY sort_order DESC, id DESC LIMIT 1",
                     params![project_id, space_id, payload.id, current_sort_order],
-                    |row| row.get(0),
+                    |row| row.get::<_, Option<String>>(0),
                 )
                 .optional()
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| error.to_string())?
+                .flatten();
             let next_date: Option<String> = conn
                 .query_row(
                     "SELECT start_date FROM actions WHERE project_id = ?1 AND space_id = ?2 AND deleted_at IS NULL AND id <> ?3 AND sort_order > ?4 ORDER BY sort_order, id LIMIT 1",
                     params![project_id, space_id, payload.id, current_sort_order],
-                    |row| row.get(0),
+                    |row| row.get::<_, Option<String>>(0),
                 )
                 .optional()
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| error.to_string())?
+                .flatten();
             let new_date = payload.start_date.as_deref();
             let fits_previous = previous_date
                 .as_deref()

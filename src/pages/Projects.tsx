@@ -8,6 +8,7 @@ import { userFacingError } from "@/lib/errors";
 import Modal from "@/components/ui/Modal";
 import FrogHelp from "@/components/ui/FrogHelp";
 import { track } from "@/lib/analytics";
+import { sortByPriority } from "@/lib/prioritySort";
 
 
 const hours = [{ value: 0.5, label: "30 分钟" }, { value: 1, label: "1 小时" }, { value: 1.5, label: "1.5 小时" }, { value: 2, label: "2 小时" }];
@@ -44,7 +45,7 @@ export default function Projects({ embedded = false, onChanged }: { embedded?: b
   const [error, setError] = useState("");
   const load = async () => { try { const [projectList, actionList] = await Promise.all([projectsApi.list(), actionsApi.list()]); setProjects(projectList); setActions(actionList); setError(""); setExpanded((current) => current.length === 0 && projectList.length > 0 ? [String(projectList[0].id)] : current); } catch (cause) { setError(userFacingError(cause)); } };
   useEffect(() => { void load(); }, []);
-  const visible = useMemo(() => projects.filter((item) => item.status === 0), [projects]);
+  const visible = useMemo(() => sortByPriority(projects.filter((item) => item.status === 0)), [projects]);
   const actionsByProject = useMemo(() => { const grouped = new Map<number, Action[]>(); actions.forEach((action) => { if (action.project_id === undefined) return; grouped.set(action.project_id, [...(grouped.get(action.project_id) ?? []), action]); }); return grouped; }, [actions]);
   const reorderActions = async (projectId: number, actionIds: number[]) => {
     const previous = actions;
@@ -201,21 +202,61 @@ function ProjectActionModal({ project, action, defaultStartDate, onClose, onSave
   return <Modal open title={action ? "编辑行动" : "添加行动"} onClose={onClose}><Form form={form} className="form" layout="vertical" onFinish={(values) => void submit(values)}><Form.Item className="full" name="title" label="行动标题" rules={[{ required: true, message: "请输入行动标题" }]}><Input autoFocus /></Form.Item><div className="form-grid action-modal-grid"><Form.Item name="estimated_hours" label="预计耗时（选填）"><Select options={hours} /></Form.Item><Form.Item name="start_date" label="开始日期（选填）"><DatePicker className="full-width" format="YYYY-MM-DD" /></Form.Item><Form.Item name="deadline" label="截止日期"><DatePicker className="full-width" format="YYYY-MM-DD" /></Form.Item></div><Form.Item name="is_frog" valuePropName="checked"><Checkbox>标记为青蛙 <FrogHelp /></Checkbox></Form.Item><div className="form-footer"><Button onClick={onClose}>取消</Button><Button type="primary" htmlType="submit">保存</Button></div></Form></Modal>;
 }
 
-function ProjectModal({ project, onClose, onSaved }: { project: Project | null; onClose: () => void; onSaved: () => Promise<void> }) { const [form] = Form.useForm(); useEffect(() => { if (project) form.setFieldsValue({ ...project, start_date: project.start_date ? dayjs(project.start_date) : undefined, deadline: project.deadline ? dayjs(project.deadline) : undefined }); }, [project, form]); if (!project) return null; const submit = async (values: Record<string, unknown>) => { try { await projectsApi.update({ id: project.id, title: values.title as string, target: values.target as string || undefined, start_date: formatDate(values.start_date as Dayjs | undefined), deadline: formatDate(values.deadline as Dayjs | undefined), importance: Number(values.importance), urgency: Number(values.urgency) } as UpdateProject); await onSaved(); message.success("项目已更新"); } catch (cause) { message.error(userFacingError(cause)); } }; return <Modal open title="编辑项目" onClose={onClose}><Form form={form} className="form" layout="vertical" onFinish={(values) => void submit(values)}><Form.Item className="full" name="title" label="项目标题" rules={[{ required: true, message: "请输入项目标题" }]}><Input autoFocus /></Form.Item><Form.Item className="full" name="target" label="项目目标"><Input.TextArea autoSize={{ minRows: 3, maxRows: 5 }} /></Form.Item><div className="form-grid"><Form.Item name="start_date" label="开始日期"><DatePicker className="full-width" format="YYYY-MM-DD" /></Form.Item><Form.Item name="deadline" label="截止日期"><DatePicker className="full-width" format="YYYY-MM-DD" /></Form.Item><Form.Item name="importance" label="重要程度"><Select options={[{ value: 1, label: "重要" }, { value: 0, label: "不重要" }]} /></Form.Item><Form.Item name="urgency" label="紧急程度"><Select options={[{ value: 1, label: "紧急" }, { value: 0, label: "不紧急" }]} /></Form.Item></div><div className="form-footer"><Button onClick={onClose}>取消</Button><Button type="primary" htmlType="submit">保存</Button></div></Form></Modal>; }
+function ProjectModal({ project, onClose, onSaved }: { project: Project | null; onClose: () => void; onSaved: () => Promise<void> }) {
+  const [form] = Form.useForm();
+
+  useEffect(() => {
+    if (project) {
+      form.setFieldsValue({
+        ...project,
+        deadline: project.deadline ? dayjs(project.deadline) : undefined,
+      });
+    }
+  }, [project, form]);
+
+  if (!project) return null;
+
+  const submit = async (values: Record<string, unknown>) => {
+    try {
+      await projectsApi.update({
+        id: project.id,
+        title: values.title as string,
+        target: values.target as string || undefined,
+        // 编辑弹框不再展示开始日期，保存时保留已有值，避免无意清空历史排期。
+        start_date: project.start_date,
+        deadline: formatDate(values.deadline as Dayjs | undefined),
+        importance: Number(values.importance),
+        urgency: Number(values.urgency),
+      } as UpdateProject);
+      await onSaved();
+      message.success("项目已更新");
+    } catch (cause) {
+      message.error(userFacingError(cause));
+    }
+  };
+
+  return <Modal open title="编辑事件" onClose={onClose}>
+    <Form form={form} className="form" layout="vertical" onFinish={(values) => void submit(values)}>
+      <Form.Item className="full" name="title" label="事件标题" rules={[{ required: true, message: "请输入事件标题" }]}>
+        <Input autoFocus />
+      </Form.Item>
+      <Form.Item className="full" name="target" label="事件目标">
+        <Input.TextArea autoSize={{ minRows: 3, maxRows: 5 }} />
+      </Form.Item>
+      <Form.Item className="full" name="deadline" label="截止日期">
+        <DatePicker className="full-width" format="YYYY-MM-DD" />
+      </Form.Item>
+      <div className="form-grid">
+        <Form.Item name="importance" label="重要程度">
+          <Select options={[{ value: 1, label: "重要" }, { value: 0, label: "不重要" }]} />
+        </Form.Item>
+        <Form.Item name="urgency" label="紧急程度">
+          <Select options={[{ value: 1, label: "紧急" }, { value: 0, label: "不紧急" }]} />
+        </Form.Item>
+      </div>
+      <div className="form-footer"><Button onClick={onClose}>取消</Button><Button type="primary" htmlType="submit">保存</Button></div>
+    </Form>
+  </Modal>;
+}
 function AbandonModal({ project, onClose, onSaved }: { project: Project | null; onClose: () => void; onSaved: (reason: string) => Promise<void> }) { if (!project) return null; return <Modal open title="放弃项目" onClose={onClose}><Form className="form" onFinish={(values: { reason: string }) => void onSaved(values.reason)} layout="vertical"><Form.Item name="reason" label="放弃原因" rules={[{ required: true, whitespace: true, message: "请输入放弃原因" }]}><Input.TextArea autoFocus autoSize={{ minRows: 3, maxRows: 5 }} /></Form.Item><div className="form-footer"><Button onClick={onClose}>取消</Button><Button type="primary" danger htmlType="submit">确认放弃</Button></div></Form></Modal>; }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

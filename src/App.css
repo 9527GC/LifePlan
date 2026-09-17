@@ -894,3 +894,33 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn { min-width: 0
 .quick-add-button-wrapper { display: inline-block; position: relative; z-index: 2; }
 .quick-add-button-overlay { position: absolute; z-index: 2; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: not-allowed; }
 .quick-add-button-overlay:focus-visible { outline: 2px solid #91caff; outline-offset: 2px; }
+
+
+/* 已完成事件允许展开查看关联目标和行动，但不提供行动编辑入口。 */
+.event-details-toggle { margin-top: 8px; padding: 0; border: 0; background: transparent; color: #1778ff; font: inherit; cursor: pointer; }
+.event-details-chevron { transition: transform .2s ease; }
+.event-details-chevron.expanded { transform: rotate(180deg); }
+.event-details-panel { width: 100%; margin-top: 5px; box-sizing: border-box; }
+.event-card-body:has(.event-details-panel) { display: block; }
+.event-card-body:has(.event-details-panel) .event-details-toggle { display: inline-flex; }
+.event-card-body:has(.event-details-panel) .card-actions { margin-top: 10px; }
+.event-detail-target { margin-bottom: 10px; }
+.event-detail-target .ant-typography { white-space: pre-wrap; }
+.event-detail-target .ant-typography:last-child { margin: 4px 0 0; color: #606266; }
+.event-detail-actions { display: grid; gap: 0; }
+.event-detail-action-row { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 5px 0; border-bottom: 1px solid #f5f5f5; color: #303133; }
+.event-detail-action-row > span:nth-child(2) { flex: 1; min-width: 0; }
+.event-detail-action-row .ant-tag { margin: 0; flex: none; }
+
+
+.completed-event-created-meta { color: #909399; font-size: 13px; font-weight: 400; }
+.event-detail-action-row > .ant-list-item-meta { min-width: 0; }
+.event-detail-action-row > .ant-tag { width: max-content; min-width: 0; margin-left: auto; flex: 0 0 auto; align-self: center; }
+
+/* 已完成事件的行动状态只保留标签自身宽度，不占用右侧整块区域。 */
+.event-detail-action-row > .ant-list-item-extra { width: auto !important; min-width: 0; flex: 0 0 auto; margin-inline-start: 16px; }
+.event-detail-action-row > .ant-list-item-extra .ant-tag { width: auto !important; min-width: 0; }
+.event-detail-action-row .ant-list-item-meta { flex: 1 1 auto; min-width: 0; }
+
+.event-detail-action-status { flex: 0 0 auto; width: auto; min-width: 0; margin-left: 16px; }
+.event-detail-action-status .ant-tag { display: inline-flex; width: auto !important; min-width: 0 !important; max-width: max-content; margin: 0; white-space: nowrap; }
