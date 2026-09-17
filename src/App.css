@@ -197,6 +197,7 @@ body.pomodoro-floating-mode .app-shell { padding-top: 0; }
 .frog-core-idea { color: #1778ff; }
 .full-width { width: 100%; }
 .form-footer { display: flex; justify-content: flex-end; gap: 8px; padding-top: 8px; }
+.daily-action-detail-footer { justify-content: space-between; align-items: center; }
 .process-steps { margin: 0 0 22px; }
 .action-steps { display: grid; gap: 10px; }
 .action-step-header { display: grid; grid-template-columns: 28px minmax(0, 1fr) 140px 112px 32px; gap: 8px; padding: 0 10px; color: #8c8c8c; font-size: 12px; }
