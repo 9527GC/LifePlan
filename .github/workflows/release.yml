@@ -123,8 +123,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path release-assets | Out-Null
           $assets = Get-ChildItem -Path src-tauri/target -Recurse -File |
             Where-Object {
-              $_.FullName -match '[\\/]bundle[\\/]nsis[\\/]' -and
-              ($_.Name -match '\.exe$' -or $_.Name -match '\.nsis\.zip(?:\.sig)?$')
+              $_.FullName -match '[\\/]bundle[\\/]' -and
+              ($_.Name -match '\.exe$' -or $_.Name -match '\.(?:nsis|msi)\.zip(?:\.sig)?$')
             }
           if (-not $assets) { throw '未找到 Windows NSIS 安装包或更新包。' }
           $assets | Copy-Item -Destination release-assets -Force
