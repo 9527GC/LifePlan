@@ -190,6 +190,16 @@ jobs:
           name: release-context
           path: release-context
 
+      - name: 整理发布上下文
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f release-context.json ]; then
+            mkdir -p release-context
+            mv release-context.json release-context/release-context.json
+          fi
+          test -f release-context/release-context.json
+
       - name: 下载全部构建资产
         uses: actions/download-artifact@v4
         with:
