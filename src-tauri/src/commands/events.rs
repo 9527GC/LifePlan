@@ -1,3 +1,4 @@
+use crate::commands::calculate_priority;
 use crate::db::{current_space_id, new_uuid, now_millis};
 use crate::models::{Event, EventCompletionCheck, NewEvent, ProcessEvent, UpdateEvent};
 use crate::AppState;
@@ -191,7 +192,7 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
                     payload.deadline.as_deref(),
                     importance,
                     urgency,
-                    4 - (importance * 2 + urgency),
+                    calculate_priority(importance, urgency),
                     timestamp
                 ],
             )
@@ -219,7 +220,7 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
                         payload.deadline.as_deref(),
                         importance,
                         urgency,
-                        4 - (importance * 2 + urgency),
+                        calculate_priority(importance, urgency),
                         timestamp
                     ],
                 )
@@ -478,3 +479,5 @@ pub fn delete_event(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     .map_err(|error| error.to_string())?;
     tx.commit().map_err(|error| error.to_string())
 }
+
+

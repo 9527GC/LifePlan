@@ -1,3 +1,4 @@
+use crate::commands::calculate_priority;
 use crate::db::{current_space_id, new_uuid, now_millis};
 use crate::models::{
     Action, NewRecurringAction, RecurringAction, ReorderRecurringActions, UpdateRecurringAction,
@@ -84,7 +85,7 @@ pub fn create_recurring_action(
         )
         .map_err(|error| error.to_string())?;
     let timestamp = now_millis();
-    let priority = 4 - (payload.importance * 2 + payload.urgency);
+    let priority = calculate_priority(payload.importance, payload.urgency);
     conn.execute(
         "INSERT INTO recurring_actions (space_id, sync_id, title, estimated_hours, is_frog, importance, urgency, priority, frequency_unit, frequency_count, sort_order, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
@@ -130,7 +131,7 @@ pub fn update_recurring_action(
     let conn = state.db.lock().map_err(|error| error.to_string())?;
     let space_id = current_space_id(&conn).map_err(|error| error.to_string())?;
     let timestamp = now_millis();
-    let priority = 4 - (values.importance * 2 + values.urgency);
+    let priority = calculate_priority(values.importance, values.urgency);
     let changed = conn
         .execute(
             "UPDATE recurring_actions
@@ -221,7 +222,7 @@ pub fn create_action_from_recurring(
     conn.execute(
         "INSERT INTO actions (space_id, sync_id, title, estimated_hours, is_frog, importance, urgency, priority, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
-        params![space_id, new_uuid(), template.0, template.1, template.2, template.3, template.4, template.3 * 2 + template.4 + 1, timestamp],
+        params![space_id, new_uuid(), template.0, template.1, template.2, template.3, template.4, calculate_priority(template.3, template.4), timestamp],
     )
     .map_err(|error| error.to_string())?;
     let action_id = conn.last_insert_rowid();
@@ -231,3 +232,5 @@ pub fn create_action_from_recurring(
         .find(|action| action.id == action_id)
         .ok_or_else(|| "生成行动后读取失败".into())
 }
+
+

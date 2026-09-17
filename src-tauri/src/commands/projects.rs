@@ -1,3 +1,4 @@
+use crate::commands::calculate_priority;
 use crate::db::{current_space_id, now_millis};
 use crate::models::Project;
 use crate::AppState;
@@ -47,7 +48,7 @@ pub fn list_projects(conn: &Connection) -> rusqlite::Result<Vec<Project>> {
          LEFT JOIN actions a ON a.project_id = p.id AND a.space_id = p.space_id AND a.deleted_at IS NULL
          WHERE p.space_id = ?1 AND p.deleted_at IS NULL
          GROUP BY p.id
-         ORDER BY p.status, p.priority DESC, p.updated_at DESC",
+         ORDER BY p.status, p.priority ASC, p.updated_at DESC",
     )?;
     statement
         .query_map([space_id], row_to_project)
@@ -99,7 +100,7 @@ pub fn update_project(
     let changed = conn
         .execute(
             "UPDATE projects SET title = ?1, target = ?2, start_date = ?3, deadline = ?4, importance = ?5, urgency = ?6, priority = ?7, updated_at = ?8 WHERE id = ?9 AND space_id = ?10 AND deleted_at IS NULL",
-            params![payload.title.trim(), payload.target.as_deref(), payload.start_date.as_deref(), payload.deadline.as_deref(), payload.importance, payload.urgency, 4 - (payload.importance * 2 + payload.urgency), now_millis(), payload.id, space_id],
+            params![payload.title.trim(), payload.target.as_deref(), payload.start_date.as_deref(), payload.deadline.as_deref(), payload.importance, payload.urgency, calculate_priority(payload.importance, payload.urgency), now_millis(), payload.id, space_id],
         )
         .map_err(|error| error.to_string())?;
     if changed == 0 {
@@ -107,7 +108,7 @@ pub fn update_project(
     }
     conn.execute(
         "UPDATE actions SET importance = ?1, urgency = ?2, priority = ?3, updated_at = ?4 WHERE project_id = ?5 AND space_id = ?6 AND deleted_at IS NULL",
-        params![payload.importance, payload.urgency, 4 - (payload.importance * 2 + payload.urgency), now_millis(), payload.id, space_id],
+        params![payload.importance, payload.urgency, calculate_priority(payload.importance, payload.urgency), now_millis(), payload.id, space_id],
     )
     .map_err(|error| error.to_string())?;
     list_projects(&conn)
@@ -224,3 +225,6 @@ pub fn delete_project(state: State<'_, AppState>, id: i64) -> Result<(), String>
     .map_err(|error| error.to_string())?;
     tx.commit().map_err(|error| error.to_string())
 }
+
+
+
