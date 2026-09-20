@@ -90,13 +90,13 @@ interface PosterInput {
 /** 生成分享海报，返回 PNG dataURL。 */
 async function buildPoster(input: PosterInput): Promise<string> {
   const W = 720;
-  const PAD = 48;
+  const PAD = 56;
   const CONTENT_W = W - PAD * 2;
   const IMG_SIZE = CONTENT_W;
-  const headerH = 208;
-  const descFont = "20px 'PingFang SC', 'Microsoft YaHei', sans-serif";
-  const descLineH = 38;
-  const footerH = 230;
+  const headerH = 232;
+  const descFont = "28px 'PingFang SC', 'Microsoft YaHei', sans-serif";
+  const descLineH = 52;
+  const footerH = 250;
 
   // 预加载图片与二维码
   const qrDataUrl = await QRCode.toDataURL(RELEASE_URL, { width: 320, margin: 1, color: { dark: "#1f2733", light: "#ffffff" } });
@@ -110,7 +110,7 @@ async function buildPoster(input: PosterInput): Promise<string> {
   measure.font = descFont;
   const descText = (input.description || "").trim();
   const descLines = descText ? wrapText(measure, descText, CONTENT_W) : [];
-  const descH = descLines.length ? descLines.length * descLineH + 28 : 0;
+  const descH = descLines.length ? descLines.length * descLineH + 44 : 0;
 
   const H = headerH + IMG_SIZE + (descH ? descH + 24 : 0) + footerH;
 
@@ -136,17 +136,17 @@ async function buildPoster(input: PosterInput): Promise<string> {
   roundRect(ctx, PAD, 40, 40, 40, 10); ctx.fill();
   ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.lineJoin = "round";
   ctx.beginPath(); ctx.moveTo(PAD + 18.75, 51.875); ctx.lineTo(PAD + 18.75, 63.75); ctx.lineTo(PAD + 26.875, 63.75); ctx.stroke();
-  ctx.fillStyle = "#1f2733"; ctx.font = "bold 24px 'PingFang SC', 'Microsoft YaHei', sans-serif"; ctx.textBaseline = "middle"; ctx.textAlign = "left"; ctx.fillText("LifePlan", PAD + 52, 61);
-  ctx.fillStyle = "#8a94a6"; ctx.font = "15px 'PingFang SC', 'Microsoft YaHei', sans-serif"; ctx.textAlign = "right"; ctx.fillText("奖励打卡", W - PAD, 62); ctx.textAlign = "left";
+  ctx.fillStyle = "#1f2733"; ctx.font = "bold 26px 'PingFang SC', 'Microsoft YaHei', sans-serif"; ctx.textBaseline = "middle"; ctx.textAlign = "left"; ctx.fillText("LifePlan", PAD + 52, 61);
+  ctx.fillStyle = "#8a94a6"; ctx.font = "17px 'PingFang SC', 'Microsoft YaHei', sans-serif"; ctx.textAlign = "right"; ctx.fillText("奖励打卡", W - PAD, 62); ctx.textAlign = "left";
 
   // 奖励名 + 元信息
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = "#1f2733"; ctx.font = "bold 34px 'PingFang SC', 'Microsoft YaHei', sans-serif";
   const title = `${input.icon || "🎁"} ${input.rewardName}`;
-  ctx.fillText(title, PAD, 132);
-  ctx.fillStyle = "#8a94a6"; ctx.font = "15px 'PingFang SC', 'Microsoft YaHei', sans-serif";
+  ctx.fillText(title, PAD, 150);
+  ctx.fillStyle = "#8a94a6"; ctx.font = "18px 'PingFang SC', 'Microsoft YaHei', sans-serif";
   const meta = `${new Date(input.exchangedAt).toLocaleString("zh-CN")} · 消耗 ${input.pointsUsed} 积分`;
-  ctx.fillText(meta, PAD, 168);
+  ctx.fillText(meta, PAD, 186);
 
   // 图片区
   const imgY = headerH;
@@ -160,7 +160,7 @@ async function buildPoster(input: PosterInput): Promise<string> {
   }
 
   // 描述
-  let cursorY = imgY + IMG_SIZE + 44;
+  let cursorY = imgY + IMG_SIZE + 64;
   if (descLines.length) {
     ctx.fillStyle = "#33405a"; ctx.font = descFont;
     for (const line of descLines) { ctx.fillText(line, PAD, cursorY); cursorY += descLineH; }
@@ -169,13 +169,13 @@ async function buildPoster(input: PosterInput): Promise<string> {
   // 底部
   const footerY = H - footerH;
   ctx.strokeStyle = "#eef1f6"; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(PAD, footerY); ctx.lineTo(W - PAD, footerY); ctx.stroke();
-  ctx.fillStyle = "#1f2733"; ctx.font = "bold 20px 'PingFang SC', 'Microsoft YaHei', sans-serif";
-  ctx.fillText("LifePlan·人生大事拆为可落地小行动", PAD, footerY + 56);
-  ctx.fillStyle = "#5a6472"; ctx.font = "15px 'PingFang SC', 'Microsoft YaHei', sans-serif";
-  ctx.fillText("再微不足道的成就都值得大肆庆祝", PAD, footerY + 86);
-  ctx.fillStyle = "#5a6472"; ctx.font = "13px 'PingFang SC', 'Microsoft YaHei', sans-serif"; ctx.fillText(RELEASE_URL, PAD, footerY + 112);
-  const qrSize = 92; const qrX = W - PAD - qrSize; const qrY = footerY + 42;
-  ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize); ctx.fillStyle = "#8a94a6"; ctx.font = "12px 'PingFang SC', 'Microsoft YaHei', sans-serif"; ctx.textAlign = "center"; ctx.fillText("扫码获取 LifePlan", qrX + qrSize / 2, qrY + qrSize + 18); ctx.textAlign = "left";
+  ctx.fillStyle = "#1f2733"; ctx.font = "bold 24px 'PingFang SC', 'Microsoft YaHei', sans-serif";
+  ctx.fillText("LifePlan·人生大事拆为可落地小行动", PAD, footerY + 76);
+  ctx.fillStyle = "#5a6472"; ctx.font = "19px 'PingFang SC', 'Microsoft YaHei', sans-serif";
+  ctx.fillText("再微不足道的成就都值得大肆庆祝", PAD, footerY + 112);
+  ctx.fillStyle = "#5a6472"; ctx.font = "17px 'PingFang SC', 'Microsoft YaHei', sans-serif"; ctx.fillText(RELEASE_URL, PAD, footerY + 144);
+  const qrSize = 108; const qrX = W - PAD - qrSize; const qrY = footerY + 44;
+  ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize); ctx.fillStyle = "#8a94a6"; ctx.font = "16px 'PingFang SC', 'Microsoft YaHei', sans-serif"; ctx.textAlign = "center"; ctx.fillText("扫码获取 LifePlan", qrX + qrSize / 2, qrY + qrSize + 18); ctx.textAlign = "left";
 
   return canvas.toDataURL("image/png");
 }

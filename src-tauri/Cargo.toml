@@ -1,6 +1,6 @@
 [package]
 name = "life-plan-todolist"
-version = "1.0.6"
+version = "1.0.7"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -31,3 +31,4 @@ thiserror = "1"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 tauri-plugin-http = "2.6.0"
+rfd = { version = "0.17", features = ["common-controls-v6"] }

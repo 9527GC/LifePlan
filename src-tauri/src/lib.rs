@@ -29,9 +29,70 @@ fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// 发布页地址：当数据库版本比当前程序更新（程序版本过低）时引导用户去更新。
+const RELEASE_PAGE_URL: &str = "https://github.com/9527GC/LifePlan/releases";
+
+/// 使用系统默认浏览器打开 URL。
+/// 此处数据库初始化已失败、尚未构建 AppHandle，无法使用 tauri-plugin-opener，
+/// 因此直接调用系统命令跨平台打开。
+fn open_in_default_browser(url: &str) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // 隐藏 cmd 控制台窗口，避免 GUI 程序闪出黑框。
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(url).spawn();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(url).spawn();
+    }
+}
+
+/// 数据库初始化失败时弹出原生提示框。
+/// 若因数据库版本高于程序支持版本（旧版打不开新版数据）导致，则提示"当前版本过低"并提供
+/// "去更新"按钮，点击后打开浏览器跳转到发布页；其余情况以错误框兜底。
+fn handle_startup_db_error(error: &db::DbError) {
+    eprintln!("数据库初始化失败：{error}");
+    if matches!(error, db::DbError::SchemaTooNew { .. }) {
+        // 单个自定义按钮"去更新"（Windows 依赖 rfd 的 common-controls-v6 特性）。
+        let result = rfd::MessageDialog::new()
+            .set_title("LifePlan")
+            .set_description("当前版本过低，请更新到最新版本。")
+            .set_buttons(rfd::MessageButtons::OkCustom("去更新".to_string()))
+            .show();
+        // 只有点击"去更新"（非关闭/取消）时才打开浏览器。
+        if !matches!(result, rfd::MessageDialogResult::Cancel) {
+            open_in_default_browser(RELEASE_PAGE_URL);
+        }
+    } else {
+        rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Error)
+            .set_title("LifePlan")
+            .set_description(format!("数据库初始化失败：{error}"))
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app_state = init_db().expect("failed to initialize database");
+    let app_state = match init_db() {
+        Ok(state) => state,
+        Err(error) => {
+            // 数据库无法初始化（如数据库被更高版本程序前滚迁移）时，弹出原生提示框引导处理，
+            // 避免旧版本因 user_version 过高而直接 panic 秒退。
+            handle_startup_db_error(&error);
+            std::process::exit(1);
+        }
+    };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

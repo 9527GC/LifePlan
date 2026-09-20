@@ -17,6 +17,8 @@ pub enum DbError {
     MigrationFailed(String),
     #[error("unknown database error: {0}")]
     Other(String),
+    #[error("数据库版本 v{version} 高于当前程序支持的最高版本 v{max}")]
+    SchemaTooNew { version: i32, max: i32 },
 }
 
 #[derive(Debug)]
@@ -98,16 +100,56 @@ pub fn init_db() -> Result<AppState, DbError> {
     AppState::new(path)
 }
 
-pub fn db_path() -> Result<PathBuf, DbError> {
-    let dirs = dirs::data_dir()
+/// 解析当前渠道的应用数据根目录。
+/// 生产构建保持既有目录名 `LifePlanTodolist`（不影响老用户）；
+/// 通过 `LIFEPLAN_ENV`（运行时优先，其次编译期 `LIFEPLAN_BUILD_ENV`）区分内测/预发渠道，
+/// 本地 debug 构建自动落到 `-dev` 目录，避免非生产构建迁移正式数据库导致旧版本打不开。
+pub fn app_data_dir() -> Result<PathBuf, DbError> {
+    let base = dirs::data_dir()
         .ok_or_else(|| DbError::PathFailed("unable to resolve system data directory".into()))?;
-    Ok(dirs.join("LifePlanTodolist").join("data.db"))
+    Ok(base.join(channel_data_folder()))
+}
+
+fn channel_data_folder() -> String {
+    match channel_suffix().as_deref() {
+        Some(suffix) => format!("LifePlanTodolist-{suffix}"),
+        None => "LifePlanTodolist".to_string(),
+    }
+}
+
+fn channel_suffix() -> Option<String> {
+    let raw = std::env::var("LIFEPLAN_ENV")
+        .ok()
+        .or_else(|| option_env!("LIFEPLAN_BUILD_ENV").map(|value| value.to_string()))
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty() && value != "production" && value != "prod");
+    if raw.is_some() {
+        return raw;
+    }
+    #[cfg(debug_assertions)]
+    {
+        return Some("dev".to_string());
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        None
+    }
+}
+
+pub fn db_path() -> Result<PathBuf, DbError> {
+    Ok(app_data_dir()?.join("data.db"))
 }
 
 pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    if version > migrations::CURRENT_SCHEMA_VERSION {
+        return Err(DbError::SchemaTooNew {
+            version,
+            max: migrations::CURRENT_SCHEMA_VERSION,
+        });
+    }
     let has_events = table_exists(conn, "events")?;
     let has_projects = table_exists(conn, "projects")?;
     let has_actions = table_exists(conn, "actions")?;
