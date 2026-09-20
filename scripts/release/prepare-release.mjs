@@ -86,7 +86,26 @@ function writeSummary(filePath, context, previousTag) {
     context.releaseNotesMarkdown,
     "",
   ].join("\n");
-  writeFileSync(filePath, content, { encoding: "utf8", flag: "a" });
+  writeFileSync(filePath, content, "utf8", { flag: "a" });
+}
+
+function collectCommits(range) {
+  // %x1f 分隔标题与正文，%x1e 分隔不同提交，确保 commit body 里的细节不被丢弃
+  const rawLog = runGit(["log", "--format=%s%x1f%b%x1e", range]);
+  return rawLog
+    .split("\x1e")
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .map((chunk) => {
+      const sep = chunk.indexOf("\x1f");
+      const subject = (sep >= 0 ? chunk.slice(0, sep) : chunk).trim();
+      const bodyText = sep >= 0 ? chunk.slice(sep + 1) : "";
+      const body = bodyText
+        .split(/\r?\n/)
+        .map((line) => line.replace(/^[-*]\s*/, "").trim())
+        .filter(Boolean);
+      return { subject, body };
+    });
 }
 
 function main() {
@@ -109,10 +128,8 @@ function main() {
   // 正式版优先以上一个“正式版”为基线，避免预发布标签（vX.Y.Z-N）截断更新内容
   const previousTag = tags.find((candidate) => !candidate.includes("-")) ?? tags[0];
   const range = previousTag ? `${previousTag}..${tag}` : tag;
-  const subjects = runGit(["log", "--format=%s", range])
-    .split("\n")
-    .filter(Boolean);
-  const sections = buildChangeSections(subjects);
+  const commits = collectCommits(range);
+  const sections = buildChangeSections(commits);
   const date = getShanghaiDate();
   const releaseNotesMarkdown = renderChangeSections(sections);
   const changelogEntry = renderChangelogEntry(tag, date, sections);

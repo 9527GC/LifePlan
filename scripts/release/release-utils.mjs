@@ -6,6 +6,10 @@ const CATEGORY_RULES = [
 
 const CATEGORY_ORDER = ["✨ 新增功能", "🐛 问题修复", "⚡ 优化改进", "🔧 其他更新"];
 const SKIP_CHANGELOG_MARKER = "[skip changelog]";
+// 仅用于识别“纯发布动作”提交；只有当提交没有实质正文时才据此跳过，避免误删真实改动。
+const RELEASE_ONLY_PATTERN = /^(?:发布|chore(?:\((?:release|version)\))?|build(?:\(release\))?)\s*[:：]/u;
+// 归类时统一剥离的常见前缀（conventional + 中文），保留后面的真实描述。
+const STRIP_PREFIX_PATTERN = /^(?:[-*]\s*)?(?:feat|fix|perf|refactor|docs|style|test|chore|build|ci|功能|新增|修复|优化|重构|数据库|渠道隔离|其它|其他|版本)(?:\([^)]*\))?\s*[:：]\s*/iu;
 const VERSION_LABELS = {
   packageJson: "package.json",
   cargoToml: "Cargo.toml",
@@ -21,21 +25,61 @@ export function assertVersionConsistency(expectedVersion, versions) {
   return versions;
 }
 
-export function buildChangeSections(commitSubjects) {
-  const sections = new Map(CATEGORY_ORDER.map((title) => [title, []]));
-  for (const rawSubject of commitSubjects) {
-    const subject = rawSubject.trim();
-    if (!subject || subject.includes(SKIP_CHANGELOG_MARKER)) continue;
-    // 跳过纯发布动作提交（如“发布：准备 v1.0.7”），避免污染更新日志
-    if (/^(?:发布|chore(?:\(release\))?)\s*[:：]/u.test(subject)) continue;
-    const rule = CATEGORY_RULES.find(({ pattern }) => pattern.test(subject));
-    const title = rule?.title ?? "🔧 其他更新";
-    const item = rule ? subject.replace(rule.pattern, "").trim() : subject;
-    sections.get(title).push(item || subject);
+function stripConventionalPrefix(line) {
+  const stripped = line.replace(STRIP_PREFIX_PATTERN, "").trim();
+  return stripped || line.trim();
+}
+
+function classify(text) {
+  const rule = CATEGORY_RULES.find(({ pattern }) => pattern.test(text));
+  return {
+    title: rule?.title ?? "🔧 其他更新",
+    item: stripConventionalPrefix(rule ? text.replace(rule.pattern, "").trim() : text),
+  };
+}
+
+function dedupe(items) {
+  const seen = new Set();
+  const result = [];
+  for (const item of items) {
+    const key = item.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push(key);
   }
-  const result = CATEGORY_ORDER
-    .map((title) => ({ title, items: sections.get(title) }))
-    .filter(({ items }) => items.length > 0);
+  return result;
+}
+
+/**
+ * 根据提交列表生成分类后的更新条目。
+ * commits: [{ subject, body: string[] }] —— 传入 { subject } 旧格式亦兼容。
+ */
+export function buildChangeSections(commits) {
+  const sections = new Map(CATEGORY_ORDER.map((title) => [title, []]));
+  for (const commit of commits) {
+    const subject = (typeof commit === "string" ? commit : commit?.subject ?? "").trim();
+    if (!subject || subject.includes(SKIP_CHANGELOG_MARKER)) continue;
+    const bodyItems = (typeof commit === "string" ? [] : (commit?.body ?? []).map((line) => line.trim()).filter(Boolean));
+    const hasBody = bodyItems.length > 0;
+
+    // 纯发布动作提交（如“发布：准备 v1.0.7”）：没有实质正文时才跳过
+    if (!hasBody && RELEASE_ONLY_PATTERN.test(subject)) continue;
+
+    if (hasBody) {
+      // 有详细描述时优先采用正文要点，避免只留一个笼统标题造成信息丢失
+      for (const line of bodyItems) {
+        if (line.includes(SKIP_CHANGELOG_MARKER)) continue;
+        const { title, item } = classify(line);
+        sections.get(title).push(item || line);
+      }
+    } else {
+      const { title, item } = classify(subject);
+      sections.get(title).push(item || subject);
+    }
+  }
+  const result = CATEGORY_ORDER.map((title) => ({ title, items: dedupe(sections.get(title)) })).filter(
+    ({ items }) => items.length > 0,
+  );
   return result.length > 0
     ? result
     : [{ title: "🔧 其他更新", items: ["本版本包含构建与发布维护更新。"] }];
@@ -103,4 +147,3 @@ export function renderReleaseBody({ tag, sections, repository, defaultBranch, as
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-

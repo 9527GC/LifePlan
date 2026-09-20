@@ -50,6 +50,8 @@ jobs:
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           TAG: ${{ github.ref_name }}
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO_URL: ${{ secrets.GITEE_REPO_URL }}
         run: |
           if git diff --quiet -- CHANGELOG.md; then
             exit 0
@@ -59,6 +61,16 @@ jobs:
           git add CHANGELOG.md
           git commit -m "docs: 自动更新 CHANGELOG $TAG [skip changelog]"
           git push origin "HEAD:refs/heads/$DEFAULT_BRANCH"
+          # 同步同一提交到 Gitee（需配置 secrets.GITEE_REPO_URL 与 GITEE_TOKEN；未配置则安全跳过）
+          if [ -n "$GITEE_TOKEN" ] && [ -n "$GITEE_REPO_URL" ]; then
+            case "$GITEE_REPO_URL" in
+              https://*) auth_url="https://oauth2:${GITEE_TOKEN}@${GITEE_REPO_URL#https://}";;
+              *) auth_url="$GITEE_REPO_URL";;
+            esac
+            git push "$auth_url" "HEAD:refs/heads/$DEFAULT_BRANCH" || echo "::warning::推送到 Gitee 失败，已跳过"
+          else
+            echo "未配置 GITEE_REPO_URL/GITEE_TOKEN，跳过 Gitee 同步"
+          fi
 
       - name: 上传发布上下文
         uses: actions/upload-artifact@v4
