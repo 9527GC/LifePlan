@@ -1,7 +1,7 @@
 const CATEGORY_RULES = [
-  { pattern: /^feat(?:\([^)]*\))?\s*[:：]\s*/iu, title: "✨ 新增功能" },
-  { pattern: /^fix(?:\([^)]*\))?\s*[:：]\s*/iu, title: "🐛 问题修复" },
-  { pattern: /^(?:perf|refactor)(?:\([^)]*\))?\s*[:：]\s*/iu, title: "⚡ 优化改进" },
+  { pattern: /^(?:feat|功能|新增)(?:\([^)]*\))?\s*[:：]\s*/iu, title: "✨ 新增功能" },
+  { pattern: /^(?:fix|修复)(?:\([^)]*\))?\s*[:：]\s*/iu, title: "🐛 问题修复" },
+  { pattern: /^(?:perf|refactor|优化|重构)(?:\([^)]*\))?\s*[:：]\s*/iu, title: "⚡ 优化改进" },
 ];
 
 const CATEGORY_ORDER = ["✨ 新增功能", "🐛 问题修复", "⚡ 优化改进", "🔧 其他更新"];
@@ -26,6 +26,8 @@ export function buildChangeSections(commitSubjects) {
   for (const rawSubject of commitSubjects) {
     const subject = rawSubject.trim();
     if (!subject || subject.includes(SKIP_CHANGELOG_MARKER)) continue;
+    // 跳过纯发布动作提交（如“发布：准备 v1.0.7”），避免污染更新日志
+    if (/^(?:发布|chore(?:\(release\))?)\s*[:：]/u.test(subject)) continue;
     const rule = CATEGORY_RULES.find(({ pattern }) => pattern.test(subject));
     const title = rule?.title ?? "🔧 其他更新";
     const item = rule ? subject.replace(rule.pattern, "").trim() : subject;

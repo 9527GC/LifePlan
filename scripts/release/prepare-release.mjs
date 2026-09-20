@@ -106,7 +106,8 @@ function main() {
   const tags = runGit(["tag", "--list", "v*", "--sort=-version:refname"])
     .split("\n")
     .filter((candidate) => candidate && candidate !== tag);
-  const previousTag = tags[0];
+  // 正式版优先以上一个“正式版”为基线，避免预发布标签（vX.Y.Z-N）截断更新内容
+  const previousTag = tags.find((candidate) => !candidate.includes("-")) ?? tags[0];
   const range = previousTag ? `${previousTag}..${tag}` : tag;
   const subjects = runGit(["log", "--format=%s", range])
     .split("\n")

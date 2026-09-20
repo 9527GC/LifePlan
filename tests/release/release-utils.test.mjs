@@ -165,3 +165,18 @@ test("汇总脚本生成 latest.json 并去重同名同内容签名", () => {
     rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+test("识别中文提交前缀并跳过发布准备提交", () => {
+  assert.deepEqual(buildChangeSections([
+    "功能：支持奖励兑换打卡",
+    "修复：修正积分结算",
+    "优化：整理奖励页面",
+    "发布：准备 v1.0.7",
+    "构建：升级依赖",
+  ]), [
+    { title: "✨ 新增功能", items: ["支持奖励兑换打卡"] },
+    { title: "🐛 问题修复", items: ["修正积分结算"] },
+    { title: "⚡ 优化改进", items: ["整理奖励页面"] },
+    { title: "🔧 其他更新", items: ["构建：升级依赖"] },
+  ]);
+});
