@@ -1,7 +1,7 @@
 {
   "name": "life-plan-todolist",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,6 +16,9 @@
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.11.0",
+    "@tiptap/extension-placeholder": "^2.27.3",
+    "@tiptap/react": "^2.27.3",
+    "@tiptap/starter-kit": "^2.27.3",
     "antd": "^6.6.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.29.0",
@@ -24,6 +27,7 @@
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.18.2",
     "tailwind-merge": "^3.6.0",
+    "tiptap-markdown": "^0.8.10",
     "zustand": "^5.0.14"
   },
   "devDependencies": {

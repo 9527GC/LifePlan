@@ -25,6 +25,26 @@ export function assertVersionConsistency(expectedVersion, versions) {
   return versions;
 }
 
+// 版本要点保持“条目具体、描述简短”：把含多个分句的条目按句末标点/分号拆成多条短要点，
+// 内容不丢；仅对拆完仍过长的单个 run-on 长句在最近的标点处优雅截断加“…”。
+const MAX_ITEM_LEN = 34;
+function trimEdges(text) {
+  return text.replace(/^[，,、：:；;\-]+/, "").replace(/[，,、：:；;\-]+$/u, "").trim();
+}
+function capLength(text) {
+  if (text.length <= MAX_ITEM_LEN) return text;
+  const head = text.slice(0, MAX_ITEM_LEN);
+  const cut = Math.max(...["，", "、", " ", "（", "("].map((sep) => head.lastIndexOf(sep)));
+  return (cut > 8 ? head.slice(0, cut) : head).trim() + "…";
+}
+function splitToItems(raw) {
+  const base = String(raw ?? "").replace(/\s+/g, " ").trim();
+  if (!base) return [];
+  const parts = base.split(/[。！？；;!?]+/u).map(trimEdges).filter(Boolean);
+  const items = parts.length ? parts : [trimEdges(base)].filter(Boolean);
+  return items.map(capLength).filter(Boolean);
+}
+
 function stripConventionalPrefix(line) {
   const stripped = line.replace(STRIP_PREFIX_PATTERN, "").trim();
   return stripped || line.trim();
@@ -70,11 +90,11 @@ export function buildChangeSections(commits) {
       for (const line of bodyItems) {
         if (line.includes(SKIP_CHANGELOG_MARKER)) continue;
         const { title, item } = classify(line);
-        sections.get(title).push(item || line);
+        for (const entry of splitToItems(item || line)) sections.get(title).push(entry);
       }
     } else {
       const { title, item } = classify(subject);
-      sections.get(title).push(item || subject);
+      for (const entry of splitToItems(item || subject)) sections.get(title).push(entry);
     }
   }
   const result = CATEGORY_ORDER.map((title) => ({ title, items: dedupe(sections.get(title)) })).filter(

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { Alert, Button, Form, Input, Modal, Space, Typography, message } from "antd";
 import { FileText, KeyRound, Settings } from "lucide-react";
+import MarkdownEditor from "@/components/ui/MarkdownEditor";
 import type { DailyScheduleSlot } from "@/types";
 
 const API_KEY_STORAGE = "lifeplan-ai-api-key";
@@ -25,14 +26,27 @@ const DEFAULT_LOG_REQUIREMENTS = `1. 要求日志正文 150-250 字左右；
 const MAX_ERROR_DETAIL_LENGTH = 4000;
 type AiError = { summary: string; detail: string; status?: number; url: string; model: string; time: string };
 
-const DEFAULT_LOG_TEMPLATE = `一、今日工作及完成情况 (必填)
-  1.
-  2.
-二、工作思考及成果展示
-  1.
-三、下一工作日计划 (必填)
-  1.
-  2.`;
+const DEFAULT_LOG_TEMPLATE = `#### 一、今日工作及完成情况 (必填)
+
+1. xxxx
+   1. xxxx
+   2. xxxx
+2. xxxx
+   1. xxxx
+   2. xxxx
+3. xxxx
+4. …
+
+#### 二、工作思考及成果展示
+
+1. xxxx
+2. ……
+
+#### 三、下一工作日计划 (必填)
+
+1. xxxx
+2. xxxx
+3. ……`;
 
 const readSetting = (key: string, fallback: string) => localStorage.getItem(key) || fallback;
 
@@ -85,6 +99,36 @@ async function generateWorkLog(apiKey: string, apiUrl: string, model: string, da
   return content;
 }
 
+// 把编辑器导出的 HTML 转成适合粘贴的富文本：嵌套有序列表转成可见的“1）2）”行，标题加粗；同时给出一份纯文本回退。
+function buildRichClipboard(rawHtml: string): { html: string; text: string } {
+  const doc = new DOMParser().parseFromString(`<div id="root">${rawHtml}</div>`, "text/html");
+  const root = doc.getElementById("root");
+  if (!root) return { html: rawHtml, text: rawHtml };
+  // 仅处理“嵌套”有序列表（祖先里还有 ol），转成带 1）2） 前缀的缩进行
+  root.querySelectorAll("ol").forEach((ol) => {
+    if (!ol.parentElement?.closest("ol")) return;
+    const box = doc.createElement("div");
+    box.setAttribute("style", "padding-left:2em;margin:2px 0;");
+    let n = 0;
+    ol.querySelectorAll(":scope > li").forEach((li) => {
+      n += 1;
+      const line = doc.createElement("div");
+      line.textContent = `${n}）${(li.textContent ?? "").trim()}`;
+      box.appendChild(line);
+    });
+    ol.replaceWith(box);
+  });
+  root.querySelectorAll("h1, h2, h3, h4").forEach((h) => h.setAttribute("style", "font-weight:600;margin:8px 0;"));
+  const html = `<div>${root.innerHTML}</div>`;
+  const text = root.innerHTML
+    .replace(/<\/(p|div|h[1-4]|li)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/\n{3,}/g, "\n\n").trim();
+  return { html, text };
+}
+
 export default function WorkLogModal({ date, slots, onClose }: { date: string; slots: DailyScheduleSlot[]; onClose: () => void }) {
   const [apiKey, setApiKey] = useState(() => readSetting(API_KEY_STORAGE, ""));
   const [apiUrl, setApiUrl] = useState(() => readSetting(API_URL_STORAGE, DEFAULT_API_URL));
@@ -95,6 +139,22 @@ export default function WorkLogModal({ date, slots, onClose }: { date: string; s
   const [generating, setGenerating] = useState(false);
   const [content, setContent] = useState(() => localStorage.getItem(`${WORK_LOG_STORAGE_PREFIX}${date}`) || "");
   const [aiError, setAiError] = useState<AiError | null>(null);
+  const bodyHtmlRef = useRef<() => string>(() => "");
+  const copyRichLog = async () => {
+    const { html, text } = buildRichClipboard(bodyHtmlRef.current());
+    try {
+      if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
+        await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) })]);
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
+      message.success("日志已复制");
+    } catch {
+      void navigator.clipboard?.writeText(text);
+      message.success("日志已复制");
+    }
+  };
+
 
   const reviewCount = useMemo(() => slots.filter((slot) => Boolean(slot.actual_notes?.trim()) && slot.met_expectation !== undefined && slot.focused !== undefined).length, [slots]);
   useEffect(() => { setContent(localStorage.getItem(`${WORK_LOG_STORAGE_PREFIX}${date}`) || ""); }, [date]);
@@ -156,18 +216,18 @@ export default function WorkLogModal({ date, slots, onClose }: { date: string; s
   };
 
   return <>
-    <Modal className="work-log-modal" wrapClassName="work-log-modal-wrap" open title="工作日志" width={720} style={{ top: 24, marginBottom: 24 }} onCancel={onClose} destroyOnHidden footer={<Space><Button icon={<Settings size={15} />} onClick={() => setSettingsOpen(true)}>AI 配置</Button><Button onClick={onClose}>关闭</Button>{content && <Button type="primary" onClick={() => { void navigator.clipboard?.writeText(content); message.success("日志已复制"); }}>复制日志</Button>}<Button type="primary" loading={generating} onClick={() => void generate()}>{content ? "重新生成" : "生成工作日志"}</Button></Space>}>
+    <Modal className="work-log-modal" wrapClassName="work-log-modal-wrap" open title="工作日志" width={720} style={{ top: 24, marginBottom: 24 }} onCancel={onClose} destroyOnHidden footer={<Space><Button icon={<Settings size={15} />} onClick={() => setSettingsOpen(true)}>AI 配置</Button><Button onClick={onClose}>关闭</Button>{content && <Button type="primary" onClick={() => { void copyRichLog(); }}>复制日志</Button>}<Button type="primary" loading={generating} onClick={() => void generate()}>{content ? "重新生成" : "生成工作日志"}</Button></Space>}>
       <div className="work-log-meta"><FileText size={17} /><span>{date} · 已填写 {reviewCount}/{slots.length} 个时段复盘</span></div>
       {!apiKey && <Alert type="info" showIcon icon={<KeyRound size={16} />} message="请先接入自己的 AI API Key" description="API Key 仅保存在本机浏览器中，用于调用你配置的 AI 服务。" />}
       {aiError && <Alert type="error" showIcon message={aiError.summary} description={<Space direction="vertical" size={4}><Typography.Text>请求地址：{aiError.url}</Typography.Text><Typography.Text>实际模型：{aiError.model}</Typography.Text><Typography.Text>发生时间：{aiError.time}</Typography.Text><Button type="link" onClick={() => Modal.info({ title: "AI 错误详情", width: 680, content: <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 360, overflow: "auto" }}>{aiError.detail}</pre> })}>查看返回详情</Button></Space>} closable onClose={() => setAiError(null)} />}
-      {content ? <Input.TextArea className="work-log-content" value={content} onChange={(event) => { const nextContent = event.target.value; setContent(nextContent); localStorage.setItem(`${WORK_LOG_STORAGE_PREFIX}${date}`, nextContent); }} autoSize={{ minRows: 12, maxRows: 20 }} /> : <Typography.Paragraph type="secondary" className="work-log-empty">点击“生成工作日志”，AI 会根据当天每个时间段的行动与复盘，按指定模板整理成一份日志。</Typography.Paragraph>}
+      {content ? <MarkdownEditor value={content} minHeight={220} maxHeight={360} getHtmlRef={bodyHtmlRef} onChange={(md) => { setContent(md); localStorage.setItem(`${WORK_LOG_STORAGE_PREFIX}${date}`, md); }} /> : <Typography.Paragraph type="secondary" className="work-log-empty">点击“生成工作日志”，AI 会根据当天每个时间段的行动与复盘，按指定模板整理成一份日志。</Typography.Paragraph>}
     </Modal>
     <Modal className="ai-settings-modal" wrapClassName="ai-settings-modal-wrap" open={settingsOpen} title="AI 配置" style={{ top: 24, marginBottom: 24 }} onCancel={() => setSettingsOpen(false)} footer={<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><Button type="link" onClick={() => Modal.confirm({ title: "确认重置 AI 配置", content: "将重置除 API Key 以外的全部配置，确定要继续吗？", okText: "确认重置", cancelText: "取消", onOk: resetAiDefaults })}>恢复默认配置（不清除 API Key）</Button><Space><Button onClick={() => setSettingsOpen(false)}>取消</Button><Button type="primary" onClick={saveSettings}>保存配置</Button></Space></div>} destroyOnHidden>
       <Form layout="vertical">
         <Form.Item label="API Key" required help="密钥会保存在本机 localStorage，请勿在公共电脑使用。"><Input.Password value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="请输入你的 API Key" /></Form.Item>
         <Form.Item label="接口地址" help="默认使用 OpenAI 兼容接口，也支持其他兼容服务。"><Input value={apiUrl} onChange={(event) => setApiUrl(event.target.value)} placeholder={DEFAULT_API_URL} /></Form.Item>
         <Form.Item label="模型名称"><Input value={model} onChange={(event) => setModel(event.target.value)} placeholder={DEFAULT_MODEL} /></Form.Item>
-        <Form.Item label="日志模板" help="这是发送给 AI 的日志结构提示词，可以按需修改。"><Input.TextArea value={logTemplate} onChange={(event) => setLogTemplate(event.target.value)} autoSize={{ minRows: 8, maxRows: 16 }} /></Form.Item>
+        <Form.Item label="日志模板" help="这是发送给 AI 的日志结构提示词，可以按需修改。"><MarkdownEditor value={logTemplate} minHeight={220} onChange={setLogTemplate} /></Form.Item>
         <Form.Item label="日志生成要求" help="AI 会同时遵守日志模板和这里的生成要求。"><Input.TextArea value={logRequirements} onChange={(event) => setLogRequirements(event.target.value)} autoSize={{ minRows: 5, maxRows: 12 }} /></Form.Item>
       </Form>
     </Modal>

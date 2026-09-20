@@ -166,6 +166,25 @@ test("汇总脚本生成 latest.json 并去重同名同内容签名", () => {
   }
 });
 
+test("版本要点自动精简：按句拆成多条、保留后续信息、run-on 长句截断", () => {
+  // 多句 → 拆成多条，第二句不再被丢弃
+  assert.deepEqual(
+    buildChangeSections(["修复：修正积分结算逻辑。原实现在跨天时偶发重复计算，导致积分翻倍"]),
+    [{ title: "🐛 问题修复", items: ["修正积分结算逻辑", "原实现在跨天时偶发重复计算，导致积分翻倍"] }],
+  );
+  // 分号并列 → 拆成两条独立短要点
+  assert.deepEqual(
+    buildChangeSections(["功能：支持导出；支持定时备份"]),
+    [{ title: "✨ 新增功能", items: ["支持导出", "支持定时备份"] }],
+  );
+  // 短条目直通
+  const [feat] = buildChangeSections(["功能：支持奖励兑换打卡"]);
+  assert.equal(feat.items[0], "支持奖励兑换打卡");
+  // 无标点的 run-on 长句 → 在长度上限处优雅截断加省略号
+  const [truncated] = buildChangeSections(["功能：" + "这是一条非常长的更新描述内容".repeat(4)]);
+  assert.ok(truncated.items[0].endsWith("…"));
+  assert.ok(truncated.items[0].length <= 35);
+});
 test("识别中文提交前缀并跳过发布准备提交", () => {
   assert.deepEqual(buildChangeSections([
     "功能：支持奖励兑换打卡",

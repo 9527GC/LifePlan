@@ -94,7 +94,7 @@ pub fn run() {
         }
     };
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         // 单实例守卫：当用户重复点击快捷方式时，不再启动新进程，
         // 而是聚焦已有实例的主窗口（若处于隐藏/最小化状态则唤起），避免出现多窗口、多托盘。
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -218,6 +218,23 @@ pub fn run() {
             system::retry_startup_backup,
             system::save_download_text_file,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // macOS：主窗口被关闭（实际为隐藏）后，点击 Dock 图标会触发 Reopen 事件。
+    // 若此时没有可见窗口，则重新唤起主窗口，修复"更新后点 Dock 图标窗口出不来、
+    // 必须退出重开才能打开"的问题。
+    app.run(|app_handle, event| {
+        let _ = app_handle;
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { has_visible_windows } = event {
+            if !has_visible_windows {
+                if let Err(error) = show_main_window(app_handle) {
+                    eprintln!("通过 Dock 唤起主窗口失败：{error}");
+                }
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = event;
+    });
 }
