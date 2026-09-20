@@ -119,8 +119,16 @@ pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
             .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
         return Ok(true);
     }
+    if version == 11 {
+        migrate_reward_checkins(conn)?;
+        return Ok(false);
+    }
     if version == 10 {
         migrate_priority_levels(conn)?;
+        return Ok(false);
+    }
+    if version == 12 {
+        migrate_event_completion_points(conn)?;
         return Ok(false);
     }
     if version == migrations::CURRENT_SCHEMA_VERSION {
@@ -163,11 +171,41 @@ pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
     )))
 }
 
+fn migrate_reward_checkins(conn: &mut Connection) -> Result<(), DbError> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS reward_checkins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+            exchange_id INTEGER NOT NULL UNIQUE REFERENCES reward_exchanges(id) ON DELETE CASCADE,
+            image_path TEXT,
+            description TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_reward_checkins_space ON reward_checkins(space_id);",
+    )
+    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    validate_current_schema(conn)
+}
+
 fn migrate_priority_levels(conn: &mut Connection) -> Result<(), DbError> {
     conn.execute_batch(
         "UPDATE projects SET priority = 4 - (importance * 2 + urgency);
          UPDATE actions SET priority = 4 - (importance * 2 + urgency);
          UPDATE recurring_actions SET priority = 4 - (importance * 2 + urgency);",
+    )
+    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    validate_current_schema(conn)
+}
+
+fn migrate_event_completion_points(conn: &mut Connection) -> Result<(), DbError> {
+    // 方案A：为事件表新增"完成积分已发放"标记列，用于事件全部搞定时的一次性里程碑奖励与撤销回退。
+    conn.execute_batch(
+        "ALTER TABLE events ADD COLUMN completion_points_awarded INTEGER NOT NULL DEFAULT 0;",
     )
     .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
     conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
@@ -412,8 +450,15 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool, D
 }
 
 fn validate_current_schema(conn: &Connection) -> Result<(), DbError> {
-    conn.execute_batch("CREATE TABLE IF NOT EXISTS daily_schedule_template_meta (space_id TEXT PRIMARY KEY REFERENCES local_spaces(space_id), updated_at INTEGER NOT NULL);")
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS daily_schedule_template_meta (space_id TEXT PRIMARY KEY REFERENCES local_spaces(space_id), updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS reward_checkins (id INTEGER PRIMARY KEY AUTOINCREMENT, space_id TEXT NOT NULL REFERENCES local_spaces(space_id), exchange_id INTEGER NOT NULL UNIQUE REFERENCES reward_exchanges(id) ON DELETE CASCADE, image_path TEXT, description TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS idx_reward_checkins_space ON reward_checkins(space_id);")
         .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    // 自愈：无论经由哪条迁移路径（全新安装、11→13、12→13 等），都确保事件完成积分标记列存在，避免版本跳级时遗漏。
+    if !column_exists(conn, "events", "completion_points_awarded")? {
+        conn.execute_batch(
+            "ALTER TABLE events ADD COLUMN completion_points_awarded INTEGER NOT NULL DEFAULT 0;",
+        )
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    }
     for (table, columns) in [
         (
             "local_spaces",
@@ -497,6 +542,10 @@ fn validate_current_schema(conn: &Connection) -> Result<(), DbError> {
         (
             "reward_exchanges",
             &["space_id", "reward_id", "points_used", "exchanged_at"][..],
+        ),
+        (
+            "reward_checkins",
+            &["space_id", "exchange_id", "image_path", "description"][..],
         ),
         (
             "user_points",

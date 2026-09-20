@@ -430,12 +430,14 @@ pub fn restore_action(state: State<'_, AppState>, id: i64) -> Result<Action, Str
             params![timestamp, source_event_id, space_id],
         )
         .map_err(|error| error.to_string())?;
+        super::events::revoke_event_completion_tx(&tx, source_event_id, &space_id)?;
     } else if let Some(event_id) = event_id {
         tx.execute(
             "UPDATE events SET status = 0, updated_at = ?1 WHERE id = ?2 AND space_id = ?3 AND status = 5 AND deleted_at IS NULL",
             params![timestamp, event_id, space_id],
         )
         .map_err(|error| error.to_string())?;
+        super::events::revoke_event_completion_tx(&tx, event_id, &space_id)?;
     }
     tx.commit().map_err(|error| error.to_string())?;
     list_actions(&conn)
@@ -531,6 +533,14 @@ pub fn complete_delegated_follow_up(
                 params![timestamp, event_id, space_id],
             )
             .map_err(|error| error.to_string())?;
+            let action_total: i64 = tx
+                .query_row(
+                    "SELECT COUNT(*) FROM actions WHERE event_id = ?1 AND space_id = ?2 AND deleted_at IS NULL",
+                    params![event_id, space_id],
+                    |row| row.get(0),
+                )
+                .map_err(|error| error.to_string())?;
+            super::events::award_event_completion_tx(&tx, event_id, &space_id, action_total)?;
         }
         "abandon" => super::events::abandon_event_tx(
             &tx,

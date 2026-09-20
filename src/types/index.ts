@@ -70,6 +70,13 @@ export interface Action {
   updated_at: number;
 }
 
+export interface EventCompletionCheck {
+  action_count: number;
+  completed_count: number;
+  abandoned_count: number;
+  points_awarded: number;
+}
+
 export interface NewEvent { title: string }
 export interface UpdateEvent { id: number; title: string }
 
@@ -189,5 +196,7 @@ export interface PomodoroStatus { active?: PomodoroRecord; total_points: number 
 export interface Reward { id: number; name: string; description?: string; points_required: number; category: string; icon: string; status: 0 | 1; created_at: number; updated_at: number }
 export interface NewReward { name: string; description?: string; points_required: number; category: string; icon: string }
 export type UpdateReward = NewReward & { id: number };
-export interface RewardExchange { id: number; reward_id: number; reward_name: string; points_used: number; exchanged_at: number }
+export interface RewardExchange { id: number; reward_id: number; reward_name: string; points_used: number; exchanged_at: number; checkin?: RewardCheckinBrief | null }
+export interface RewardCheckinBrief { description?: string | null; created_at: number; updated_at: number }
+export interface RewardCheckin { exchange_id: number; reward_name: string; icon: string; points_used: number; exchanged_at: number; description?: string | null; image_base64?: string | null; created_at: number; updated_at: number }
 export interface RewardsOverview { total_points: number; rewards: Reward[]; exchanges: RewardExchange[] }

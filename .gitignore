@@ -33,3 +33,7 @@ docs/
 *.njsproj
 *.sln
 *.sw?
+
+# 本地嵌入式 Python 运行时（构建时生成，不入库）
+Python/
+

@@ -68,6 +68,7 @@ pub struct EventCompletionCheck {
     pub action_count: i64,
     pub completed_count: i64,
     pub abandoned_count: i64,
+    pub points_awarded: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -342,6 +343,27 @@ pub struct RewardExchange {
     pub reward_name: String,
     pub points_used: i64,
     pub exchanged_at: i64,
+    pub checkin: Option<RewardCheckinBrief>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RewardCheckinBrief {
+    pub description: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RewardCheckin {
+    pub exchange_id: i64,
+    pub reward_name: String,
+    pub icon: String,
+    pub points_used: i64,
+    pub exchanged_at: i64,
+    pub description: Option<String>,
+    pub image_base64: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

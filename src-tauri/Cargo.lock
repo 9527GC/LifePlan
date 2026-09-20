@@ -2167,8 +2167,9 @@ dependencies = [
 
 [[package]]
 name = "life-plan-todolist"
-version = "1.0.5-3"
+version = "1.0.6"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "dirs 5.0.1",
  "rusqlite",

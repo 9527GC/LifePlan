@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Action, AddDailyListItem, DailyListItem, DailySchedule, DailyScheduleSlot, DailyTemplateSlot, Event, NewAction, NewEvent, NewDailySlot, NewRecurringAction, ProcessEvent, Project, RecurringAction, ReorderDailyList, ReorderProjectActions, ReorderRecurringActions, StartupNotice, UpdateAction, UpdateDailySlot, UpdateDailySlotReview, UpdateEvent, UpdateProject, PomodoroRecord, PomodoroStatus, NewReward, Reward, RewardsOverview, UpdateReward, UpdateRecurringAction } from "@/types";
+import type { Action, EventCompletionCheck, RewardCheckin, AddDailyListItem, DailyListItem, DailySchedule, DailyScheduleSlot, DailyTemplateSlot, Event, NewAction, NewEvent, NewDailySlot, NewRecurringAction, ProcessEvent, Project, RecurringAction, ReorderDailyList, ReorderProjectActions, ReorderRecurringActions, StartupNotice, UpdateAction, UpdateDailySlot, UpdateDailySlotReview, UpdateEvent, UpdateProject, PomodoroRecord, PomodoroStatus, NewReward, Reward, RewardsOverview, UpdateReward, UpdateRecurringAction } from "@/types";
 
 type TauriWindow = Window & {
   __TAURI_INTERNALS__?: {
@@ -18,6 +18,7 @@ const invokeCommand = <T>(command: string, args?: Record<string, unknown>) => {
 export const systemApi = {
   startupNotice: () => invokeCommand<StartupNotice | null>("get_startup_notice"),
   retryStartupBackup: () => invokeCommand<void>("retry_startup_backup"),
+  saveTextFile: (filename: string, content: string) => invokeCommand<string>("save_download_text_file", { filename, content }),
 };
 
 export const eventsApi = {
@@ -25,7 +26,7 @@ export const eventsApi = {
   create: (payload: NewEvent) => invokeCommand<Event>("create_event", { payload }),
   update: (payload: UpdateEvent) => invokeCommand<Event>("update_event", { payload }),
   process: (payload: ProcessEvent) => invokeCommand<void>("process_event", { payload }),
-  complete: (eventId: number) => invokeCommand<void>("complete_event", { event_id: eventId }),
+  complete: (eventId: number) => invokeCommand<EventCompletionCheck>("complete_event", { event_id: eventId }),
   restore: (eventId: number) => invokeCommand<void>("restore_event", { event_id: eventId }),
   delete: (id: number) => invokeCommand<void>("delete_event", { id }),
 };
@@ -33,7 +34,7 @@ export const eventsApi = {
 export const projectsApi = {
   list: () => invokeCommand<Project[]>("get_projects"),
   update: (payload: UpdateProject) => invokeCommand<Project>("update_project", { payload }),
-  complete: (id: number) => invokeCommand<void>("complete_project", { id }),
+  complete: (id: number) => invokeCommand<number>("complete_project", { id }),
   abandon: (id: number, reason: string) => invokeCommand<void>("abandon_project", { id, reason }),
   delete: (id: number) => invokeCommand<void>("delete_project", { id }),
 };
@@ -92,4 +93,7 @@ export const rewardsApi = {
   update: (payload: UpdateReward) => invokeCommand<Reward>("update_reward", { payload }),
   archive: (id: number) => invokeCommand<void>("archive_reward", { id }),
   exchange: (rewardId: number) => invokeCommand<RewardsOverview>("exchange_reward", { rewardId }),
+  saveCheckin: (payload: { exchangeId: number; imageBase64?: string | null; description?: string | null }) => invokeCommand<void>("save_reward_checkin", { exchangeId: payload.exchangeId, imageBase64: payload.imageBase64 ?? null, description: payload.description ?? null }),
+  getCheckin: (exchangeId: number) => invokeCommand<RewardCheckin>("get_reward_checkin", { exchangeId }),
+  savePoster: (imageBase64: string) => invokeCommand<string>("save_reward_poster", { imageBase64 }),
 };

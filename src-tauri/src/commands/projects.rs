@@ -119,7 +119,7 @@ pub fn update_project(
 }
 
 #[tauri::command]
-pub fn complete_project(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+pub fn complete_project(state: State<'_, AppState>, id: i64) -> Result<i64, String> {
     let mut conn = state.db.lock().map_err(|error| error.to_string())?;
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     let space_id = current_space_id(&tx).map_err(|error| error.to_string())?;
@@ -151,7 +151,9 @@ pub fn complete_project(state: State<'_, AppState>, id: i64) -> Result<(), Strin
         params![timestamp, event_id, space_id],
     )
     .map_err(|error| error.to_string())?;
-    tx.commit().map_err(|error| error.to_string())
+    let points_awarded = super::events::award_event_completion_tx(&tx, event_id, &space_id, completed)?;
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(points_awarded)
 }
 
 #[tauri::command]

@@ -42,6 +42,80 @@ fn to_sql_error(error: crate::db::DbError) -> rusqlite::Error {
     rusqlite::Error::ToSqlConversionFailure(Box::new(error))
 }
 
+/// 事件"全部搞定"里程碑积分参数（方案A）：
+/// 奖励 = BASE + 已完成行动数，封顶 MAX，避免大小事件一刀切。
+const EVENT_COMPLETION_BASE_POINTS: i64 = 5;
+const EVENT_COMPLETION_MAX_POINTS: i64 = 30;
+
+/// 事件从"未完成"进入"已完成"时发放一次性里程碑积分。
+/// 幂等：若该事件已发放过则返回 0，不重复计分；与番茄专注分相互独立。
+pub(crate) fn award_event_completion_tx(
+    tx: &rusqlite::Transaction<'_>,
+    event_id: i64,
+    space_id: &str,
+    completed_action_count: i64,
+) -> Result<i64, String> {
+    let already: i64 = tx
+        .query_row(
+            "SELECT completion_points_awarded FROM events WHERE id = ?1 AND space_id = ?2 AND deleted_at IS NULL",
+            params![event_id, space_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if already > 0 {
+        return Ok(0);
+    }
+    let award = (EVENT_COMPLETION_BASE_POINTS + completed_action_count).min(EVENT_COMPLETION_MAX_POINTS);
+    if award <= 0 {
+        return Ok(0);
+    }
+    let now = now_millis();
+    tx.execute(
+        "INSERT INTO user_points (space_id, total_points, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(space_id) DO UPDATE SET total_points = user_points.total_points + excluded.total_points, updated_at = excluded.updated_at",
+        params![space_id, award, now],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute(
+        "UPDATE events SET completion_points_awarded = ?1 WHERE id = ?2 AND space_id = ?3 AND deleted_at IS NULL",
+        params![award, event_id, space_id],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(award)
+}
+
+/// 事件从"已完成"回退时扣回里程碑积分，防止反复勾选刷分。
+/// 幂等：仅当存在已发放积分时扣减，且结果不为负。
+pub(crate) fn revoke_event_completion_tx(
+    tx: &rusqlite::Transaction<'_>,
+    event_id: i64,
+    space_id: &str,
+) -> Result<i64, String> {
+    let already: i64 = tx
+        .query_row(
+            "SELECT completion_points_awarded FROM events WHERE id = ?1 AND space_id = ?2 AND deleted_at IS NULL",
+            params![event_id, space_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .unwrap_or(0);
+    if already <= 0 {
+        return Ok(0);
+    }
+    let now = now_millis();
+    tx.execute(
+        "INSERT INTO user_points (space_id, total_points, updated_at) VALUES (?1, 0, ?2) ON CONFLICT(space_id) DO UPDATE SET total_points = MAX(user_points.total_points - ?3, 0), updated_at = excluded.updated_at",
+        params![space_id, now, already],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute(
+        "UPDATE events SET completion_points_awarded = 0 WHERE id = ?1 AND space_id = ?2 AND deleted_at IS NULL",
+        params![event_id, space_id],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(already)
+}
+
 pub fn list_events(conn: &Connection) -> rusqlite::Result<Vec<Event>> {
     restore_due_delays(conn)?;
     let space_id = current_space_id(conn).map_err(to_sql_error)?;
@@ -389,11 +463,13 @@ pub fn complete_event(
         params![now_millis(), event_id, space_id],
     )
     .map_err(|error| error.to_string())?;
+    let points_awarded = award_event_completion_tx(&tx, event_id, &space_id, completed)?;
     tx.commit().map_err(|error| error.to_string())?;
     Ok(EventCompletionCheck {
         action_count,
         completed_count: completed,
         abandoned_count: 0,
+        points_awarded,
     })
 }
 

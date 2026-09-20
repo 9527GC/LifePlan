@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { showSavedToast } from "@/lib/savedToast";
 
 type TauriWindow = Window & { __TAURI_INTERNALS__?: { invoke?: unknown } };
 const invokeCommand = <T>(command: string, args?: Record<string, unknown>) => {
@@ -8,7 +9,7 @@ const invokeCommand = <T>(command: string, args?: Record<string, unknown>) => {
 };
 
 type AnalyticsValue = string | number | boolean | null;
-export type AnalyticsEvent = "应用启动" | "查看页面" | "创建事件" | "事件转项目" | "创建项目行动" | "安排到今日" | "完成行动" | "完成项目" | "启动番茄钟" | "完成番茄钟" | "完成每日复盘" | "创建奖励" | "兑换奖励" | "导出埋点" | "查看新用户引导" | "完成新用户引导";
+export type AnalyticsEvent = "应用启动" | "查看页面" | "创建事件" | "事件转项目" | "创建项目行动" | "安排到今日" | "完成行动" | "完成项目" | "启动番茄钟" | "完成番茄钟" | "完成每日复盘" | "创建奖励" | "兑换奖励" | "奖励打卡" | "导出埋点" | "查看新用户引导" | "完成新用户引导";
 
 export function track(eventName: AnalyticsEvent, payload: Record<string, AnalyticsValue> = {}) {
   void invokeCommand<void>("record_analytics_event", { eventName, payloadJson: JSON.stringify(payload) }).catch(() => undefined);
@@ -16,14 +17,11 @@ export function track(eventName: AnalyticsEvent, payload: Record<string, Analyti
 
 export async function exportAnalyticsLog() {
   const rows = await invokeCommand<Array<{ id: number; event_name: string; occurred_at: number; app_version: string; platform: string; payload_json: string }>>("export_analytics_events");
-  const blob = new Blob([JSON.stringify(rows, null, 2)], { type: "application/json;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `lifeplan-analytics-${new Date().toISOString().slice(0, 10)}.json`;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  const filename = `lifeplan-analytics-${new Date().toISOString().slice(0, 10)}.json`;
+  const path = await invokeCommand<string>("save_download_text_file", { filename, content: JSON.stringify(rows, null, 2) });
   track("导出埋点", { count: rows.length });
+  showSavedToast("操作日志（脱敏）已下载", path);
+  return path;
 }
 
 

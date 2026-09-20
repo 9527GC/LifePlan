@@ -811,8 +811,12 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn { min-width: 0
 
 .quick-add-empty-toast .ant-message-notice-content { background: #fff; color: #303133; box-shadow: 0 4px 12px rgba(0, 0, 0, .08); }
 .process-action-modal-wrap .process-action-modal .form-footer {
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
+}
+/* 复选框靠左，操作按钮在任意步骤都靠右对齐 */
+.process-action-modal-wrap .process-action-modal .form-footer > .ant-checkbox-wrapper {
+  margin-right: auto;
 }
 .process-action-modal-wrap .process-action-modal .form-footer-actions {
   display: flex;
@@ -924,3 +928,50 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn { min-width: 0
 
 .event-detail-action-status { flex: 0 0 auto; width: auto; min-width: 0; margin-left: 16px; }
 .event-detail-action-status .ant-tag { display: inline-flex; width: auto !important; min-width: 0 !important; max-width: max-content; margin: 0; white-space: nowrap; }
+
+
+/* 奖励打卡与海报 */
+.exchange-row-actions { display: flex; align-items: center; gap: 12px; }
+.checkin-reward { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.checkin-upload { display: flex; width: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 28px; border: 1px dashed #c9d4e5; border-radius: 12px; color: #596579; background: #fbfcfe; cursor: pointer; transition: border-color .15s ease, background .15s ease, color .15s ease; }
+.checkin-upload:hover { border-color: #1778ff; color: #1778ff; background: #f2f7ff; }
+.checkin-upload span { font-weight: 600; }
+.checkin-preview { position: relative; overflow: hidden; border: 1px solid #eef1f6; border-radius: 12px; }
+.checkin-preview img { display: block; width: 100%; max-height: 320px; object-fit: cover; }
+.checkin-preview-change { position: absolute; top: 8px; right: 8px; }
+.checkin-preview-remove { position: absolute; top: 8px; right: 88px; }
+.checkin-desc { margin-top: 12px; }
+.poster-stage { display: flex; min-height: 360px; align-items: flex-start; justify-content: center; padding: 16px; border-radius: 12px; background: #f5f7fb; }
+.poster-stage img { max-width: 100%; border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .12); }
+.poster-loading { display: flex; flex-direction: column; align-items: center; gap: 12px; color: #8a94a6; }
+
+/* 打卡/海报弹框：限制最大高度，与软件窗口上下保持间距 */
+.checkin-modal-wrap.ant-modal-wrap,
+.poster-modal-wrap.ant-modal-wrap { inset: 0 !important; box-sizing: border-box !important; display: flex !important; height: 100dvh !important; align-items: center !important; padding: 16px 0 !important; overflow: hidden !important; }
+.checkin-modal-wrap .checkin-modal.ant-modal,
+.poster-modal-wrap .poster-modal.ant-modal { top: 0 !important; margin: 0 auto !important; max-height: calc(100dvh - 32px) !important; }
+.checkin-modal-wrap .checkin-modal .ant-modal-container,
+.poster-modal-wrap .poster-modal .ant-modal-container { display: flex !important; flex-direction: column !important; max-height: calc(100dvh - 32px) !important; overflow: hidden !important; }
+.checkin-modal-wrap .checkin-modal .ant-modal-header,
+.checkin-modal-wrap .checkin-modal .ant-modal-footer,
+.poster-modal-wrap .poster-modal .ant-modal-header,
+.poster-modal-wrap .poster-modal .ant-modal-footer { flex: 0 0 auto !important; }
+.checkin-modal-wrap .checkin-modal .ant-modal-body,
+.poster-modal-wrap .poster-modal .ant-modal-body { flex: 1 1 auto !important; min-height: 0 !important; overflow-y: auto !important; overflow-x: hidden !important; }
+
+/* 打卡字数提示移入输入框内部右下角 */
+.checkin-desc.ant-input-textarea-show-count > textarea { padding-bottom: 24px; }
+.checkin-desc .ant-input-data-count { position: absolute; right: 10px; bottom: 8px; padding: 0 4px; border-radius: 4px; background: rgba(255, 255, 255, .85); }
+
+/* 文件已保存 toast 的“查看 >”按钮 */
+.saved-file-toast { display: inline-flex; align-items: center; gap: 14px; white-space: nowrap; }
+.saved-file-toast-text { color: inherit; }
+.saved-file-toast-link { display: inline-flex; align-items: center; gap: 5px; padding: 3px 11px; border: 1px solid rgba(23,120,255,.35); border-radius: 999px; color: #1778ff; background: rgba(23,120,255,.08); font: inherit; font-size: 13px; line-height: 1.4; cursor: pointer; transition: background .15s, border-color .15s; }
+.saved-file-toast-link:hover { border-color: #1778ff; background: rgba(23,120,255,.16); }
+
+/* 打卡上传区：可粘贴提示小字 */
+.checkin-hint { font-size: 12px; opacity: .85; }
+/* 打卡上传框：聚焦（可粘贴）时高亮蓝色边框 */
+.checkin-upload:focus { border-color: #1778ff; box-shadow: 0 0 0 3px rgba(23,120,255,.14); outline: none; }
+/* 打卡查看态：只读文案展示 */
+.checkin-desc-view { margin-top: 12px; margin-bottom: 0; padding: 12px 14px; border-radius: 10px; background: #f5f7fb; color: #33404f; white-space: pre-wrap; word-break: break-word; line-height: 1.6; }

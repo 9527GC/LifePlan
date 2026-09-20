@@ -60,7 +60,7 @@ export default function Projects({ embedded = false, onChanged }: { embedded?: b
     }
   };
   const deleteProject = async (item: Project) => { try { await projectsApi.delete(item.id); await load(); await onChanged?.(); message.success("项目已删除"); } catch (cause) { setError(userFacingError(cause)); } };
-  const completeProject = async (item: Project) => { try { await projectsApi.complete(item.id); track("完成项目"); await load(); await onChanged?.(); message.success("项目已完成"); } catch (cause) { setError(userFacingError(cause)); } };
+  const completeProject = async (item: Project) => { try { const points = await projectsApi.complete(item.id); track("完成项目"); await load(); await onChanged?.(); message.success(points > 0 ? `项目已完成，事件搞定 +${points} 积分` : "项目已完成"); } catch (cause) { setError(userFacingError(cause)); } };
   const deleteAction = async (item: Action) => { try { await actionsApi.delete(item.id); await load(); await onChanged?.(); message.success("行动已删除"); } catch (cause) { setError(userFacingError(cause)); } };
 
   return <div className={embedded ? "projects-embedded" : "page"}>{!embedded && <header className="page-header"><div><Typography.Title level={2} className="page-title">项目</Typography.Title><Typography.Paragraph className="page-subtitle">从事件转化而来的可执行结果，拆成一条条行动。</Typography.Paragraph></div></header>}

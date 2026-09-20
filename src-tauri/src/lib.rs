@@ -138,6 +138,9 @@ pub fn run() {
             rewards::update_reward,
             rewards::archive_reward,
             rewards::exchange_reward,
+            rewards::save_reward_checkin,
+            rewards::get_reward_checkin,
+            rewards::save_reward_poster,
             recurring_actions::get_recurring_actions,
             recurring_actions::create_recurring_action,
             recurring_actions::update_recurring_action,
@@ -145,6 +148,7 @@ pub fn run() {
             recurring_actions::create_action_from_recurring,
             system::get_startup_notice,
             system::retry_startup_backup,
+            system::save_download_text_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

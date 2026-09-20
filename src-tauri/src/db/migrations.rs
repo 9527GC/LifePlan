@@ -1,4 +1,4 @@
-pub const CURRENT_SCHEMA_VERSION: i32 = 11;
+pub const CURRENT_SCHEMA_VERSION: i32 = 13;
 
 pub const INIT_MIGRATION: &str = r#"
 PRAGMA foreign_keys = OFF;
@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS events (
     delay_until TEXT,
     delay_note TEXT,
     abandon_reason TEXT,
+    completion_points_awarded INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
@@ -154,6 +155,16 @@ CREATE TABLE IF NOT EXISTS reward_exchanges (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_reward_exchanges_space_time ON reward_exchanges(space_id, exchanged_at DESC);
+CREATE TABLE IF NOT EXISTS reward_checkins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+    exchange_id INTEGER NOT NULL UNIQUE REFERENCES reward_exchanges(id) ON DELETE CASCADE,
+    image_path TEXT,
+    description TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reward_checkins_space ON reward_checkins(space_id);
 CREATE TABLE IF NOT EXISTS user_points (
     space_id TEXT PRIMARY KEY REFERENCES local_spaces(space_id),
     total_points INTEGER NOT NULL DEFAULT 0,
