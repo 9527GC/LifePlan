@@ -166,24 +166,18 @@ test("汇总脚本生成 latest.json 并去重同名同内容签名", () => {
   }
 });
 
-test("版本要点自动精简：按句拆成多条、保留后续信息、run-on 长句截断", () => {
-  // 多句 → 拆成多条，第二句不再被丢弃
+test("版本要点：按句号拆成多条完整要点，不做长度截断", () => {
+  // 多句 → 拆成多条，两句都完整保留
   assert.deepEqual(
     buildChangeSections(["修复：修正积分结算逻辑。原实现在跨天时偶发重复计算，导致积分翻倍"]),
     [{ title: "🐛 问题修复", items: ["修正积分结算逻辑", "原实现在跨天时偶发重复计算，导致积分翻倍"] }],
   );
-  // 分号并列 → 拆成两条独立短要点
-  assert.deepEqual(
-    buildChangeSections(["功能：支持导出；支持定时备份"]),
-    [{ title: "✨ 新增功能", items: ["支持导出", "支持定时备份"] }],
-  );
-  // 短条目直通
-  const [feat] = buildChangeSections(["功能：支持奖励兑换打卡"]);
-  assert.equal(feat.items[0], "支持奖励兑换打卡");
-  // 无标点的 run-on 长句 → 在长度上限处优雅截断加省略号
-  const [truncated] = buildChangeSections(["功能：" + "这是一条非常长的更新描述内容".repeat(4)]);
-  assert.ok(truncated.items[0].endsWith("…"));
-  assert.ok(truncated.items[0].length <= 35);
+  // 单条长句（仅逗号无句号）→ 完整保留，绝不截断成“…”
+  const long = "重写了工作日志默认模板，新增 Markdown 层级版式并支持行动下的子条目，同时放宽模板输入框高度";
+  const [feat] = buildChangeSections(["功能：" + long]);
+  assert.equal(feat.items.length, 1);
+  assert.equal(feat.items[0], long);
+  assert.ok(!feat.items[0].endsWith("…"));
 });
 test("识别中文提交前缀并跳过发布准备提交", () => {
   assert.deepEqual(buildChangeSections([

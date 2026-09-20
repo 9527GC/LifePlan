@@ -25,24 +25,16 @@ export function assertVersionConsistency(expectedVersion, versions) {
   return versions;
 }
 
-// 版本要点保持“条目具体、描述简短”：把含多个分句的条目按句末标点/分号拆成多条短要点，
-// 内容不丢；仅对拆完仍过长的单个 run-on 长句在最近的标点处优雅截断加“…”。
-const MAX_ITEM_LEN = 34;
+// 版本要点保持“条目具体、描述简短”：仅把含多个句子的条目按全角句末标点（。！？）拆成若干条
+// 完整要点，内容全部保留、绝不截断丢字；单条过长的情况交由提交规范约束，而非由脚本静默砍字。
 function trimEdges(text) {
   return text.replace(/^[，,、：:；;\-]+/, "").replace(/[，,、：:；;\-]+$/u, "").trim();
-}
-function capLength(text) {
-  if (text.length <= MAX_ITEM_LEN) return text;
-  const head = text.slice(0, MAX_ITEM_LEN);
-  const cut = Math.max(...["，", "、", " ", "（", "("].map((sep) => head.lastIndexOf(sep)));
-  return (cut > 8 ? head.slice(0, cut) : head).trim() + "…";
 }
 function splitToItems(raw) {
   const base = String(raw ?? "").replace(/\s+/g, " ").trim();
   if (!base) return [];
-  const parts = base.split(/[。！？；;!?]+/u).map(trimEdges).filter(Boolean);
-  const items = parts.length ? parts : [trimEdges(base)].filter(Boolean);
-  return items.map(capLength).filter(Boolean);
+  const parts = base.split(/[。！？]+/u).map(trimEdges).filter(Boolean);
+  return parts.length ? parts : [trimEdges(base)].filter(Boolean);
 }
 
 function stripConventionalPrefix(line) {
