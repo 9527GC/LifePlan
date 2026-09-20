@@ -95,6 +95,13 @@ pub fn run() {
     };
 
     tauri::Builder::default()
+        // 单实例守卫：当用户重复点击快捷方式时，不再启动新进程，
+        // 而是聚焦已有实例的主窗口（若处于隐藏/最小化状态则唤起），避免出现多窗口、多托盘。
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Err(error) = show_main_window(app) {
+                eprintln!("唤起已有窗口失败：{error}");
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
