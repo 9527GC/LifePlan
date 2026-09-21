@@ -1,4 +1,4 @@
-pub const CURRENT_SCHEMA_VERSION: i32 = 13;
+pub const CURRENT_SCHEMA_VERSION: i32 = 14;
 
 pub const INIT_MIGRATION: &str = r#"
 PRAGMA foreign_keys = OFF;

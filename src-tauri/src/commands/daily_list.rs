@@ -37,7 +37,7 @@ fn list_items(conn: &Connection, list_date: &str) -> rusqlite::Result<Vec<DailyL
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     let mut statement = conn.prepare(
         "SELECT d.id, d.action_id, d.list_date, d.sort_order,
-                a.id, a.event_id, a.project_id, e.title, p.title, e.delegated_to,
+                a.id, COALESCE(a.event_id, p.event_id), a.project_id, COALESCE(e.title, pe.title), p.title, COALESCE(e.delegated_to, pe.delegated_to),
                 a.title, a.description, a.estimated_hours, a.start_date, a.deadline,
                 a.is_frog, COALESCE(p.importance, a.importance), COALESCE(p.urgency, a.urgency),
                 COALESCE(p.priority, a.priority), a.status, a.completed_at,
@@ -46,7 +46,7 @@ fn list_items(conn: &Connection, list_date: &str) -> rusqlite::Result<Vec<DailyL
          FROM daily_list_items d
          JOIN actions a ON a.id = d.action_id AND a.space_id = d.space_id AND a.deleted_at IS NULL
          LEFT JOIN events e ON e.id = a.event_id AND e.space_id = a.space_id AND e.deleted_at IS NULL
-         LEFT JOIN projects p ON p.id = a.project_id AND p.space_id = a.space_id AND p.deleted_at IS NULL
+         LEFT JOIN projects p ON p.id = a.project_id AND p.space_id = a.space_id AND p.deleted_at IS NULL LEFT JOIN events pe ON pe.id = p.event_id AND pe.space_id = p.space_id AND pe.deleted_at IS NULL
          WHERE d.space_id = ?1 AND d.list_date = ?2
          ORDER BY d.sort_order, d.id"
     )?;

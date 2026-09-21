@@ -220,92 +220,19 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
     let timestamp = now_millis();
     match payload.decision.as_str() {
         "self" => {
-            let project_title = payload.project_title.as_deref().unwrap_or("").trim();
-            let action_steps = payload
-                .action_steps
-                .as_ref()
-                .ok_or_else(|| "至少需要填写一条行动".to_string())?;
-            if action_steps.is_empty() {
-                return Err("至少需要填写一条行动".into());
-            }
+            let action_steps = payload.action_steps.as_ref().ok_or_else(|| "至少需要填写一条行动".to_string())?;
+            if action_steps.is_empty() { return Err("至少需要填写一条行动".into()); }
             for step in action_steps {
-                if step.title.trim().is_empty() {
-                    return Err("行动标题不能为空".into());
-                }
-                if ![0.0, 0.5, 1.0, 1.5, 2.0].contains(&step.estimated_hours) {
-                    return Err("行动耗时必须为空、30 分钟、1 小时、1.5 小时或 2 小时".into());
-                }
-                if step.start_date.is_some()
-                    && payload.deadline.is_some()
-                    && step.start_date > payload.deadline
-                {
-                    return Err("行动开始日期不能晚于项目截止日期".into());
-                }
+                if step.title.trim().is_empty() { return Err("行动标题不能为空".into()); }
+                if ![0.0, 0.5, 1.0, 1.5, 2.0].contains(&step.estimated_hours) { return Err("行动耗时必须为空、30 分钟、1 小时、1.5 小时或 2 小时".into()); }
+                if step.start_date.is_some() && payload.deadline.is_some() && step.start_date > payload.deadline { return Err("行动开始日期不能晚于事件截止日期".into()); }
             }
-            let estimated: f64 = action_steps.iter().map(|step| step.estimated_hours).sum();
-            let importance = payload.importance.unwrap_or(1);
-            let urgency = payload.urgency.unwrap_or(1);
-            if project_title.is_empty() {
-                return Err("项目标题不能为空".into());
-            }
+            let importance = payload.importance.unwrap_or(1); let urgency = payload.urgency.unwrap_or(1);
             validate_dates(&payload.start_date, &payload.deadline)?;
-            tx.execute(
-                "INSERT INTO projects
-                 (space_id, sync_id, event_id, title, target, estimated_hours,
-                  start_date, deadline, importance, urgency, priority, status,
-                  created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 0, ?12, ?12)",
-                params![
-                    space_id,
-                    new_uuid(),
-                    payload.event_id,
-                    project_title,
-                    payload.target.as_deref(),
-                    estimated,
-                    payload.start_date.as_deref(),
-                    payload.deadline.as_deref(),
-                    importance,
-                    urgency,
-                    calculate_priority(importance, urgency),
-                    timestamp
-                ],
-            )
-            .map_err(|error| error.to_string())?;
-            let project_id = tx.last_insert_rowid();
-            tx.execute(
-                "UPDATE actions SET project_id = ?1, event_id = NULL, updated_at = ?2
-                 WHERE event_id = ?3 AND space_id = ?4 AND deleted_at IS NULL",
-                params![project_id, timestamp, payload.event_id, space_id],
-            )
-            .map_err(|error| error.to_string())?;
             for step in action_steps {
-                tx.execute(
-                    "INSERT INTO actions
-                     (space_id, sync_id, project_id, title, estimated_hours, start_date,
-                      deadline, importance, urgency, priority, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
-                    params![
-                        space_id,
-                        new_uuid(),
-                        project_id,
-                        step.title.trim(),
-                        step.estimated_hours,
-                        step.start_date.as_deref(),
-                        payload.deadline.as_deref(),
-                        importance,
-                        urgency,
-                        calculate_priority(importance, urgency),
-                        timestamp
-                    ],
-                )
-                .map_err(|error| error.to_string())?;
+                tx.execute("INSERT INTO actions (space_id, sync_id, event_id, title, estimated_hours, start_date, deadline, importance, urgency, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)", params![space_id, new_uuid(), payload.event_id, step.title.trim(), step.estimated_hours, step.start_date.as_deref(), payload.deadline.as_deref(), importance, urgency, calculate_priority(importance, urgency), timestamp]).map_err(|error| error.to_string())?;
             }
-            tx.execute(
-                "UPDATE events SET status = 1, updated_at = ?1
-                 WHERE id = ?2 AND space_id = ?3 AND deleted_at IS NULL",
-                params![timestamp, payload.event_id, space_id],
-            )
-            .map_err(|error| error.to_string())?;
+            tx.execute("UPDATE events SET status = 1, updated_at = ?1 WHERE id = ?2 AND space_id = ?3 AND deleted_at IS NULL", params![timestamp, payload.event_id, space_id]).map_err(|error| error.to_string())?;
         }
         "delegate" => {
             let delegated_to = payload.delegated_to.as_deref().unwrap_or("").trim();

@@ -43,7 +43,7 @@ fn to_sql_error(error: crate::db::DbError) -> rusqlite::Error {
 pub fn list_actions(conn: &Connection) -> rusqlite::Result<Vec<Action>> {
     let space_id = current_space_id(conn).map_err(to_sql_error)?;
     let mut statement = conn.prepare(
-        "SELECT a.id, a.event_id, a.project_id, COALESCE(e.title, pe.title), p.title, COALESCE(e.delegated_to, pe.delegated_to), a.title, a.description, a.estimated_hours, a.start_date, a.deadline, a.is_frog, COALESCE(p.importance, a.importance), COALESCE(p.urgency, a.urgency), COALESCE(p.priority, a.priority), a.status, a.completed_at, a.is_delegated_follow_up, a.cascade_abandoned, COALESCE(a.sort_order, 0), a.created_at, a.updated_at
+        "SELECT a.id, COALESCE(a.event_id, p.event_id), a.project_id, COALESCE(e.title, pe.title), p.title, COALESCE(e.delegated_to, pe.delegated_to), a.title, a.description, a.estimated_hours, a.start_date, a.deadline, a.is_frog, COALESCE(p.importance, a.importance), COALESCE(p.urgency, a.urgency), COALESCE(p.priority, a.priority), a.status, a.completed_at, a.is_delegated_follow_up, a.cascade_abandoned, COALESCE(a.sort_order, 0), a.created_at, a.updated_at
          FROM actions a
          LEFT JOIN events e ON e.id = a.event_id AND e.space_id = a.space_id AND e.deleted_at IS NULL
          LEFT JOIN projects p ON p.id = a.project_id AND p.space_id = a.space_id AND p.deleted_at IS NULL
@@ -130,25 +130,17 @@ pub fn get_actions(state: State<'_, AppState>) -> Result<Vec<Action>, String> {
 #[tauri::command]
 pub fn create_action(state: State<'_, AppState>, payload: NewAction) -> Result<Action, String> {
     validate_action_payload(&payload)?;
-    if payload.event_id.is_some() && payload.project_id.is_some() {
-        return Err("行动不能同时关联事件和项目".into());
-    }
     let conn = state.db.lock().map_err(|error| error.to_string())?;
     let space_id = current_space_id(&conn).map_err(|error| error.to_string())?;
     let timestamp = now_millis();
     let priority = calculate_priority(payload.importance, payload.urgency);
 
     if let Some(event_id) = payload.event_id {
-        let (status, project_id, importance, urgency): (i32, Option<i64>, i32, i32) = conn
-            .query_row(
-                "SELECT e.status, (SELECT p.id FROM projects p WHERE p.event_id = e.id AND p.space_id = e.space_id AND p.deleted_at IS NULL), COALESCE((SELECT p.importance FROM projects p WHERE p.event_id = e.id AND p.space_id = e.space_id AND p.deleted_at IS NULL), 1), COALESCE((SELECT p.urgency FROM projects p WHERE p.event_id = e.id AND p.space_id = e.space_id AND p.deleted_at IS NULL), 1) FROM events e WHERE e.id = ?1 AND e.space_id = ?2 AND e.deleted_at IS NULL",
-                params![event_id, space_id],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-            )
+        let (status, importance, urgency): (i32, i32, i32) = conn.query_row(
+            "SELECT status, 1, 1 FROM events WHERE id = ?1 AND space_id = ?2 AND deleted_at IS NULL",
+            params![event_id, space_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
             .map_err(|error| error.to_string())?;
-        if project_id.is_some() || status != 0 {
-            return Err("只有未转项目且未处理的事件可以直接关联行动".into());
-        }
+        if status != 1 { return Err("只有进行中的事件可以新增行动".into()); }
         conn.execute(
             "INSERT INTO actions (space_id, sync_id, event_id, title, description, estimated_hours, start_date, deadline, is_frog, importance, urgency, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
             params![space_id, new_uuid(), event_id, payload.title.trim(), payload.description.as_deref(), payload.estimated_hours, payload.start_date.as_deref(), payload.deadline.as_deref(), payload.is_frog, importance, urgency, calculate_priority(importance, urgency), timestamp],

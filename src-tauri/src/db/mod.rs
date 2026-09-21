@@ -173,6 +173,10 @@ pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
         migrate_event_completion_points(conn)?;
         return Ok(false);
     }
+    if version == 13 {
+        migrate_projects_into_events(conn)?;
+        return Ok(false);
+    }
     if version == migrations::CURRENT_SCHEMA_VERSION {
         validate_current_schema(conn)?;
         remove_obsolete_daily_schedule_slot(conn)?;
@@ -244,6 +248,37 @@ fn migrate_priority_levels(conn: &mut Connection) -> Result<(), DbError> {
     validate_current_schema(conn)
 }
 
+fn migrate_projects_into_events(conn: &mut Connection) -> Result<(), DbError> {
+    let tx = conn.transaction().map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    tx.execute_batch(
+        "ALTER TABLE events ADD COLUMN target TEXT;
+         ALTER TABLE events ADD COLUMN estimated_hours REAL NOT NULL DEFAULT 1;
+         ALTER TABLE events ADD COLUMN start_date TEXT;
+         ALTER TABLE events ADD COLUMN deadline TEXT;
+         ALTER TABLE events ADD COLUMN importance INTEGER NOT NULL DEFAULT 1;
+         ALTER TABLE events ADD COLUMN urgency INTEGER NOT NULL DEFAULT 1;
+         ALTER TABLE events ADD COLUMN priority INTEGER NOT NULL DEFAULT 4;
+         UPDATE events
+         SET title = COALESCE((SELECT p.title FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL), title),
+             target = (SELECT p.target FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL),
+             estimated_hours = COALESCE((SELECT p.estimated_hours FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL), estimated_hours),
+             start_date = (SELECT p.start_date FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL),
+             deadline = (SELECT p.deadline FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL),
+             importance = COALESCE((SELECT p.importance FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL), importance),
+             urgency = COALESCE((SELECT p.urgency FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL), urgency),
+             priority = COALESCE((SELECT p.priority FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL), priority),
+             status = CASE COALESCE((SELECT p.status FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL), 0) WHEN 1 THEN 5 WHEN 2 THEN 4 ELSE 1 END
+         WHERE EXISTS (SELECT 1 FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL);
+         UPDATE actions
+         SET event_id = (SELECT p.event_id FROM projects p WHERE p.id = actions.project_id AND p.space_id = actions.space_id)
+         WHERE event_id IS NULL AND project_id IS NOT NULL;
+        ",
+    ).map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    tx.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    tx.commit().map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    validate_current_schema(conn)
+}
 fn migrate_event_completion_points(conn: &mut Connection) -> Result<(), DbError> {
     // 方案A：为事件表新增"完成积分已发放"标记列，用于事件全部搞定时的一次性里程碑奖励与撤销回退。
     conn.execute_batch(
