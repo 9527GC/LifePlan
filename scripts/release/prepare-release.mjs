@@ -111,9 +111,9 @@ function collectCommits(range) {
 function main() {
   const args = parseArguments(process.argv.slice(2));
   const tag = readRequiredArgument(args, "tag", process.env.GITHUB_REF_NAME);
-  const tagMatch = tag.match(/^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/u);
+  const tagMatch = tag.match(/^v(\d+\.\d+\.\d+)(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?$/u);
   if (!tagMatch) {
-    throw new Error(`无效的发布标签：${tag}。标签必须匹配 v主版本.次版本.修订版本。`);
+    throw new Error(`无效的发布标签：${tag}。标签必须匹配 v主版本.次版本.修订版本，可选第四段修正版或预发布标识。`);
   }
 
   const version = tagMatch[1];
