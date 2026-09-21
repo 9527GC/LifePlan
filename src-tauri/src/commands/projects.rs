@@ -107,6 +107,11 @@ pub fn update_project(
         return Err("项目不存在".into());
     }
     conn.execute(
+        "UPDATE events SET title = ?1, updated_at = ?2 WHERE id = (SELECT event_id FROM projects WHERE id = ?3 AND space_id = ?4) AND space_id = ?4 AND deleted_at IS NULL",
+        params![payload.title.trim(), now_millis(), payload.id, space_id],
+    )
+    .map_err(|error| error.to_string())?;
+    conn.execute(
         "UPDATE actions SET importance = ?1, urgency = ?2, priority = ?3, updated_at = ?4 WHERE project_id = ?5 AND space_id = ?6 AND deleted_at IS NULL",
         params![payload.importance, payload.urgency, calculate_priority(payload.importance, payload.urgency), now_millis(), payload.id, space_id],
     )
