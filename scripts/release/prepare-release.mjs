@@ -133,13 +133,14 @@ function main() {
   const date = getShanghaiDate();
   const releaseNotesMarkdown = renderChangeSections(sections);
   const changelogEntry = renderChangelogEntry(tag, date, sections);
+  const changelogFile = args.get("changelog-file") ?? "CHANGELOG.md";
   let changelog = "";
   try {
-    changelog = readFileSync("CHANGELOG.md", "utf8");
+    changelog = readFileSync(changelogFile, "utf8");
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
-  writeUtf8File("CHANGELOG.md", upsertChangelog(changelog, tag, changelogEntry));
+  writeUtf8File(changelogFile, upsertChangelog(changelog, tag, changelogEntry));
 
   const context = {
     tag,
