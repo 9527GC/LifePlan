@@ -417,7 +417,9 @@ pub fn complete_event(
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(|error| error.to_string())?;
-    if action_count == 0 || completed != action_count {
+    // 没有拆解行动的事件可以通过“2分钟小事直接完成”快速完成；
+    // 有行动时仍必须确保全部行动已完成。
+    if completed != action_count {
         return Err("事件下所有行动完成后才能标记完成".into());
     }
     tx.execute(
