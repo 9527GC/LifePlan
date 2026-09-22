@@ -26,8 +26,8 @@ export const eventsApi = {
   create: (payload: NewEvent) => invokeCommand<Event>("create_event", { payload }),
   update: (payload: UpdateEvent) => invokeCommand<Event>("update_event", { payload }),
   process: (payload: ProcessEvent) => invokeCommand<void>("process_event", { payload }),
-  complete: (eventId: number) => invokeCommand<EventCompletionCheck>("complete_event", { event_id: eventId }),
-  restore: (eventId: number) => invokeCommand<void>("restore_event", { event_id: eventId }),
+  complete: (eventId: number) => invokeCommand<EventCompletionCheck>("complete_event", { eventId }),
+  restore: (eventId: number) => invokeCommand<void>("restore_event", { eventId }),
   delete: (id: number) => invokeCommand<void>("delete_event", { id }),
 };
 
