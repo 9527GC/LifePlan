@@ -9,7 +9,7 @@ const invokeCommand = <T>(command: string, args?: Record<string, unknown>) => {
 };
 
 type AnalyticsValue = string | number | boolean | null;
-export type AnalyticsEvent = "应用启动" | "查看页面" | "创建事件" | "事件转项目" | "创建项目行动" | "安排到今日" | "完成行动" | "完成项目" | "启动番茄钟" | "完成番茄钟" | "完成每日复盘" | "创建奖励" | "兑换奖励" | "奖励打卡" | "导出埋点" | "查看新用户引导" | "完成新用户引导";
+export type AnalyticsEvent = "应用启动" | "查看页面" | "创建事件" | "处理事件" | "创建项目行动" | "安排到今日" | "完成行动" | "完成项目" | "启动番茄钟" | "完成番茄钟" | "完成每日复盘" | "创建奖励" | "兑换奖励" | "奖励打卡" | "导出埋点" | "查看新用户引导" | "完成新用户引导";
 
 export function track(eventName: AnalyticsEvent, payload: Record<string, AnalyticsValue> = {}) {
   void invokeCommand<void>("record_analytics_event", { eventName, payloadJson: JSON.stringify(payload) }).catch(() => undefined);

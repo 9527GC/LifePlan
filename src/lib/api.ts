@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Action, EventCompletionCheck, RewardCheckin, AddDailyListItem, DailyListItem, DailySchedule, DailyScheduleSlot, DailyTemplateSlot, Event, NewAction, NewEvent, NewDailySlot, NewRecurringAction, ProcessEvent, Project, RecurringAction, ReorderDailyList, ReorderProjectActions, ReorderRecurringActions, StartupNotice, UpdateAction, UpdateDailySlot, UpdateDailySlotReview, UpdateEvent, UpdateProject, PomodoroRecord, PomodoroStatus, NewReward, Reward, RewardsOverview, UpdateReward, UpdateRecurringAction } from "@/types";
+import type { Action, EventCompletionCheck, RewardCheckin, AddDailyListItem, DailyListItem, DailySchedule, DailyScheduleSlot, DailyTemplateSlot, Event, NewAction, NewEvent, NewDailySlot, NewRecurringAction, ProcessEvent, Project, RecurringAction, ReorderDailyList, ReorderEventActions, ReorderProjectActions, ReorderRecurringActions, StartupNotice, UpdateAction, UpdateDailySlot, UpdateDailySlotReview, UpdateEvent, UpdateProject, PomodoroRecord, PomodoroStatus, NewReward, Reward, RewardsOverview, UpdateReward, UpdateRecurringAction } from "@/types";
 
 type TauriWindow = Window & {
   __TAURI_INTERNALS__?: {
@@ -47,6 +47,7 @@ export const actionsApi = {
   restore: (id: number) => invokeCommand<Action>("restore_action", { id }),
   delete: (id: number) => invokeCommand<void>("delete_action", { id }),
   reorder: (payload: ReorderProjectActions) => invokeCommand<void>("reorder_project_actions", { payload }),
+  reorderEvent: (payload: ReorderEventActions) => invokeCommand<void>("reorder_event_actions", { payload }),
   resolveDelegated: (actionId: number, resolution: string, abandonReason?: string) => invokeCommand<void>("complete_delegated_follow_up", { payload: { action_id: actionId, resolution, abandon_reason: abandonReason } }),
 };
 

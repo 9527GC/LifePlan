@@ -19,6 +19,10 @@ pub struct Event {
     pub abandon_reason: Option<String>,
     pub project_id: Option<i64>,
     pub project_title: Option<String>,
+    pub target: Option<String>,
+    pub deadline: Option<String>,
+    pub importance: Option<i32>,
+    pub urgency: Option<i32>,
     pub action_count: i64,
     pub pending_action_count: i64,
     pub completed_action_count: i64,
@@ -35,6 +39,10 @@ pub struct NewEvent {
 pub struct UpdateEvent {
     pub id: i64,
     pub title: String,
+    pub target: Option<String>,
+    pub deadline: Option<String>,
+    pub importance: Option<i32>,
+    pub urgency: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,6 +167,12 @@ pub struct UpdateAction {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReorderProjectActions {
     pub project_id: i64,
+    pub action_ids: Vec<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReorderEventActions {
+    pub event_id: i64,
     pub action_ids: Vec<i64>,
 }
 

@@ -1,8 +1,9 @@
-use crate::commands::projects::recalc_project_estimated_hours;
 use crate::commands::calculate_priority;
+use crate::commands::projects::recalc_project_estimated_hours;
 use crate::db::{current_space_id, new_uuid, now_millis};
 use crate::models::{
-    Action, DelegatedFollowUpResolution, NewAction, ReorderProjectActions, UpdateAction,
+    Action, DelegatedFollowUpResolution, NewAction, ReorderEventActions, ReorderProjectActions,
+    UpdateAction,
 };
 use crate::AppState;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -140,7 +141,9 @@ pub fn create_action(state: State<'_, AppState>, payload: NewAction) -> Result<A
             "SELECT status, 1, 1 FROM events WHERE id = ?1 AND space_id = ?2 AND deleted_at IS NULL",
             params![event_id, space_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
             .map_err(|error| error.to_string())?;
-        if status != 1 { return Err("只有进行中的事件可以新增行动".into()); }
+        if status != 1 {
+            return Err("只有进行中的事件可以新增行动".into());
+        }
         conn.execute(
             "INSERT INTO actions (space_id, sync_id, event_id, title, description, estimated_hours, start_date, deadline, is_frog, importance, urgency, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
             params![space_id, new_uuid(), event_id, payload.title.trim(), payload.description.as_deref(), payload.estimated_hours, payload.start_date.as_deref(), payload.deadline.as_deref(), payload.is_frog, importance, urgency, calculate_priority(importance, urgency), timestamp],
@@ -545,5 +548,48 @@ pub fn complete_delegated_follow_up(
     tx.commit().map_err(|error| error.to_string())
 }
 
-
-
+#[tauri::command]
+pub fn reorder_event_actions(
+    state: State<'_, AppState>,
+    payload: ReorderEventActions,
+) -> Result<(), String> {
+    let mut seen = HashSet::with_capacity(payload.action_ids.len());
+    if payload
+        .action_ids
+        .iter()
+        .any(|action_id| !seen.insert(*action_id))
+    {
+        return Err("行动排序列表包含重复行动".into());
+    }
+    let mut conn = state.db.lock().map_err(|error| error.to_string())?;
+    let tx = conn.transaction().map_err(|error| error.to_string())?;
+    let space_id = current_space_id(&tx).map_err(|error| error.to_string())?;
+    let status: i32 = tx
+        .query_row(
+            "SELECT status FROM events WHERE id = ?1 AND space_id = ?2 AND deleted_at IS NULL",
+            params![payload.event_id, space_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "事件不存在".to_string())?;
+    if status != 1 {
+        return Err("只有进行中的事件可以调整行动顺序".into());
+    }
+    // 旧版数据可能同时存在直接关联事件的行动和历史关联记录下的行动。
+    // 前端只会提交事件卡片实际渲染的行动，因此逐项校验归属即可；不能按全部兼容数据的总数校验，
+    // 否则历史孤立关联会让正常的拖拽排序被误判为列表不一致。
+    let mut dates = Vec::with_capacity(payload.action_ids.len());
+    for action_id in &payload.action_ids {
+        let start_date: Option<String> = tx.query_row("SELECT start_date FROM actions WHERE id = ?1 AND space_id = ?2 AND deleted_at IS NULL AND (event_id = ?3 OR project_id IN (SELECT id FROM projects WHERE event_id = ?3 AND space_id = ?2 AND deleted_at IS NULL))", params![action_id, space_id, payload.event_id], |row| row.get(0)).optional().map_err(|error| error.to_string())?.ok_or_else(|| "行动不属于当前事件".to_string())?;
+        dates.push(start_date.unwrap_or_else(|| "9999-12-31".into()));
+    }
+    if dates.windows(2).any(|pair| pair[0] > pair[1]) {
+        return Err("行动顺序必须按开始日期从早到晚排列，只能调整同一天的行动顺序".into());
+    }
+    let timestamp = now_millis();
+    for (index, action_id) in payload.action_ids.iter().enumerate() {
+        tx.execute("UPDATE actions SET sort_order = ?1, updated_at = ?2 WHERE id = ?3 AND space_id = ?4 AND deleted_at IS NULL", params![index as i64 + 1, timestamp, action_id, space_id]).map_err(|error| error.to_string())?;
+    }
+    tx.commit().map_err(|error| error.to_string())
+}

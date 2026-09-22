@@ -46,7 +46,7 @@ export default function Projects({ embedded = false, onChanged }: { embedded?: b
   const load = async () => { try { const [projectList, actionList] = await Promise.all([projectsApi.list(), actionsApi.list()]); setProjects(projectList); setActions(actionList); setError(""); setExpanded((current) => current.length === 0 && projectList.length > 0 ? [String(projectList[0].id)] : current); } catch (cause) { setError(userFacingError(cause)); } };
   useEffect(() => { void load(); }, []);
   const visible = useMemo(() => sortByPriority(projects.filter((item) => item.status === 0)), [projects]);
-  const actionsByProject = useMemo(() => { const grouped = new Map<number, Action[]>(); actions.forEach((action) => { if (action.project_id === undefined) return; grouped.set(action.project_id, [...(grouped.get(action.project_id) ?? []), action]); }); return grouped; }, [actions]);
+  const actionsByProject = useMemo(() => { const grouped = new Map<number, Action[]>(); actions.forEach((action) => { if (action.project_id == null) return; grouped.set(action.project_id, [...(grouped.get(action.project_id) ?? []), action]); }); return grouped; }, [actions]);
   const reorderActions = async (projectId: number, actionIds: number[]) => {
     const previous = actions;
     const orderById = new Map(actionIds.map((actionId, index) => [actionId, index + 1]));

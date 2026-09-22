@@ -16,8 +16,12 @@ export interface Event {
   delay_until?: string;
   delay_note?: string;
   abandon_reason?: string;
-  project_id?: number;
-  project_title?: string;
+  project_id?: number | null;
+  project_title?: string | null;
+  target?: string;
+  deadline?: string;
+  importance?: number;
+  urgency?: number;
   action_count: number;
   pending_action_count: number;
   completed_action_count: number;
@@ -47,10 +51,10 @@ export interface Project {
 
 export interface Action {
   id: number;
-  event_id?: number;
-  project_id?: number;
-  event_title?: string;
-  project_title?: string;
+  event_id?: number | null;
+  project_id?: number | null;
+  event_title?: string | null;
+  project_title?: string | null;
   delegated_to?: string;
   title: string;
   description?: string;
@@ -78,7 +82,14 @@ export interface EventCompletionCheck {
 }
 
 export interface NewEvent { title: string }
-export interface UpdateEvent { id: number; title: string }
+export interface UpdateEvent {
+  id: number;
+  title: string;
+  target?: string;
+  deadline?: string;
+  importance?: number;
+  urgency?: number;
+}
 
 export interface ProcessEvent {
   event_id: number;
@@ -128,6 +139,7 @@ export interface NewAction {
 }
 export type UpdateAction = Omit<NewAction, "event_id" | "project_id"> & { id: number };
 export interface ReorderProjectActions { project_id: number; action_ids: number[] }
+export interface ReorderEventActions { event_id: number; action_ids: number[] }
 
 export type RecurringFrequencyUnit = "daily" | "weekly" | "monthly";
 export interface RecurringAction {

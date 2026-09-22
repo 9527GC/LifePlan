@@ -179,6 +179,7 @@ pub fn run() {
             actions::update_action,
             actions::complete_action,
             actions::reorder_project_actions,
+            actions::reorder_event_actions,
             actions::restore_action,
             actions::delete_action,
             actions::complete_delegated_follow_up,
@@ -227,7 +228,11 @@ pub fn run() {
     app.run(|app_handle, event| {
         let _ = app_handle;
         #[cfg(target_os = "macos")]
-        if let tauri::RunEvent::Reopen { has_visible_windows, .. } = event {
+        if let tauri::RunEvent::Reopen {
+            has_visible_windows,
+            ..
+        } = event
+        {
             if !has_visible_windows {
                 if let Err(error) = show_main_window(app_handle) {
                     eprintln!("通过 Dock 唤起主窗口失败：{error}");
