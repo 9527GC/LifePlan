@@ -17,8 +17,6 @@ pub struct Event {
     pub delay_until: Option<String>,
     pub delay_note: Option<String>,
     pub abandon_reason: Option<String>,
-    pub project_id: Option<i64>,
-    pub project_title: Option<String>,
     pub target: Option<String>,
     pub deadline: Option<String>,
     pub importance: Option<i32>,
@@ -26,6 +24,7 @@ pub struct Event {
     pub action_count: i64,
     pub pending_action_count: i64,
     pub completed_action_count: i64,
+    pub is_quick_completed: i32,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -49,7 +48,8 @@ pub struct UpdateEvent {
 pub struct ProcessEvent {
     pub event_id: i64,
     pub decision: String,
-    pub project_title: Option<String>,
+    pub quick_complete: Option<bool>,
+    pub title: Option<String>,
     pub target: Option<String>,
     pub start_date: Option<String>,
     pub deadline: Option<String>,
@@ -80,44 +80,10 @@ pub struct EventCompletionCheck {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Project {
-    pub id: i64,
-    pub event_id: i64,
-    pub event_title: String,
-    pub title: String,
-    pub target: Option<String>,
-    pub estimated_hours: f64,
-    pub start_date: Option<String>,
-    pub deadline: Option<String>,
-    pub importance: i32,
-    pub urgency: i32,
-    pub priority: i32,
-    pub status: i32,
-    pub action_count: i64,
-    pub completed_action_count: i64,
-    pub pending_action_count: i64,
-    pub created_at: i64,
-    pub updated_at: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateProject {
-    pub id: i64,
-    pub title: String,
-    pub target: Option<String>,
-    pub start_date: Option<String>,
-    pub deadline: Option<String>,
-    pub importance: i32,
-    pub urgency: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Action {
     pub id: i64,
     pub event_id: Option<i64>,
-    pub project_id: Option<i64>,
     pub event_title: Option<String>,
-    pub project_title: Option<String>,
     pub delegated_to: Option<String>,
     pub title: String,
     pub description: Option<String>,
@@ -140,7 +106,6 @@ pub struct Action {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewAction {
     pub event_id: Option<i64>,
-    pub project_id: Option<i64>,
     pub title: String,
     pub description: Option<String>,
     pub estimated_hours: f64,
@@ -162,12 +127,6 @@ pub struct UpdateAction {
     pub is_frog: i32,
     pub importance: i32,
     pub urgency: i32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReorderProjectActions {
-    pub project_id: i64,
-    pub action_ids: Vec<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

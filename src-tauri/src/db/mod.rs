@@ -52,34 +52,7 @@ impl AppState {
         }
 
         let mut conn = Connection::open(&db_path)?;
-        let needs_migration = requires_legacy_migration(&conn)?;
-        if needs_migration {
-            backup::create_migration_backup(&db_path)?;
-        }
-
-        match run_migrations(&mut conn) {
-            Ok(value) => value,
-            Err(error) if needs_migration => {
-                let failure_copy = backup::preserve_failed_database(&db_path, now_millis());
-                drop(conn);
-                if let Err(restore_error) = backup::restore_backup(&db_path) {
-                    let failure_path = failure_copy
-                        .map(|path| path.display().to_string())
-                        .unwrap_or_else(|copy_error| copy_error.to_string());
-                    return Err(DbError::MigrationFailed(format!(
-                        "{error}; restore failed: {restore_error}; failed database copy: {failure_path}"
-                    )));
-                }
-                startup_notice = Some(crate::models::StartupNotice {
-                    kind: "migration_restored".into(),
-                    message: "数据库迁移失败，已恢复迁移前数据。原数据库副本已保留。".into(),
-                });
-                conn = Connection::open(&db_path)?;
-                false
-            }
-            Err(error) => return Err(error),
-        };
-
+        run_migrations(&mut conn)?;
         ensure_current_space(&mut conn)?;
 
         Ok(Self {
@@ -150,356 +123,131 @@ pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
             max: migrations::CURRENT_SCHEMA_VERSION,
         });
     }
-    let has_events = table_exists(conn, "events")?;
-    let has_projects = table_exists(conn, "projects")?;
-    let has_actions = table_exists(conn, "actions")?;
-
-    if version == 0 && !has_events && !has_projects && !has_actions {
+    if version == 0
+        && !table_exists(conn, "events")?
+        && !table_exists(conn, "actions")?
+        && !table_exists(conn, "projects")?
+    {
         conn.execute_batch(migrations::INIT_MIGRATION)
             .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
         conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
             .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
         return Ok(true);
     }
-    if version == 11 {
-        migrate_reward_checkins(conn)?;
-        return Ok(false);
-    }
-    if version == 10 {
-        migrate_priority_levels(conn)?;
-        return Ok(false);
-    }
-    if version == 12 {
-        migrate_event_completion_points(conn)?;
+    if version == 15 {
+        migrate_add_quick_completion_marker(conn)?;
         return Ok(false);
     }
     if version == 13 {
-        migrate_projects_into_events(conn)?;
+        migrate_remove_projects(conn, true)?;
+        return Ok(false);
+    }
+    if version == 14 {
+        migrate_remove_projects(conn, false)?;
         return Ok(false);
     }
     if version == migrations::CURRENT_SCHEMA_VERSION {
         validate_current_schema(conn)?;
-        remove_obsolete_daily_schedule_slot(conn)?;
         return Ok(false);
     }
-    if version == 8 {
-        migrate_recurring_actions(conn)?;
-        return Ok(false);
-    }
-    if version == 7 {
-        migrate_reward_metadata(conn)?;
-        return Ok(false);
-    }
-    if version == 6 {
-        migrate_pomodoro_rewards(conn)?;
-        return Ok(false);
-    }
-    if version == 5 {
-        migrate_daily_schedule(conn)?;
-        remove_obsolete_daily_schedule_slot(conn)?;
-        return Ok(false);
-    }
-    if version == 4 {
-        migrate_daily_list(conn)?;
-        return Ok(false);
-    }
-    if version == 2 || version == 3 {
-        migrate_sort_order(conn)?;
-        return Ok(false);
-    }
-    if version == 0 && has_events && has_projects && has_actions {
-        migrate_legacy(conn)?;
-        return Ok(false);
-    }
-
     Err(DbError::MigrationFailed(format!(
-        "unsupported or incomplete database schema version {version}"
+        "不支持从数据库版本 v{version} 升级；项目概念及其历史数据兼容已移除，请使用 v15 数据库或重新初始化。"
     )))
 }
 
-fn migrate_reward_checkins(conn: &mut Connection) -> Result<(), DbError> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS reward_checkins (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
-            exchange_id INTEGER NOT NULL UNIQUE REFERENCES reward_exchanges(id) ON DELETE CASCADE,
-            image_path TEXT,
-            description TEXT,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_reward_checkins_space ON reward_checkins(space_id);",
-    )
-    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    validate_current_schema(conn)
-}
-
-fn migrate_priority_levels(conn: &mut Connection) -> Result<(), DbError> {
-    conn.execute_batch(
-        "UPDATE projects SET priority = 4 - (importance * 2 + urgency);
-         UPDATE actions SET priority = 4 - (importance * 2 + urgency);
-         UPDATE recurring_actions SET priority = 4 - (importance * 2 + urgency);",
-    )
-    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    validate_current_schema(conn)
-}
-
-fn migrate_projects_into_events(conn: &mut Connection) -> Result<(), DbError> {
-    let tx = conn.transaction().map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    tx.execute_batch(
-        "ALTER TABLE events ADD COLUMN target TEXT;
-         ALTER TABLE events ADD COLUMN estimated_hours REAL NOT NULL DEFAULT 1;
-         ALTER TABLE events ADD COLUMN start_date TEXT;
-         ALTER TABLE events ADD COLUMN deadline TEXT;
-         ALTER TABLE events ADD COLUMN importance INTEGER NOT NULL DEFAULT 1;
-         ALTER TABLE events ADD COLUMN urgency INTEGER NOT NULL DEFAULT 1;
-         ALTER TABLE events ADD COLUMN priority INTEGER NOT NULL DEFAULT 4;
-         UPDATE events
-         SET title = COALESCE((SELECT p.title FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL), title),
-             target = (SELECT p.target FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL),
-             estimated_hours = COALESCE((SELECT p.estimated_hours FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL), estimated_hours),
-             start_date = (SELECT p.start_date FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL),
-             deadline = (SELECT p.deadline FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL),
-             importance = COALESCE((SELECT p.importance FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL), importance),
-             urgency = COALESCE((SELECT p.urgency FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL), urgency),
-             priority = COALESCE((SELECT p.priority FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL), priority),
-             status = CASE COALESCE((SELECT p.status FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL), 0) WHEN 1 THEN 5 WHEN 2 THEN 4 ELSE 1 END
-         WHERE EXISTS (SELECT 1 FROM projects p WHERE p.event_id = events.id AND p.space_id = events.space_id AND p.deleted_at IS NULL);
-         UPDATE actions
-         SET event_id = (SELECT p.event_id FROM projects p WHERE p.id = actions.project_id AND p.space_id = actions.space_id)
-         WHERE event_id IS NULL AND project_id IS NOT NULL;
-        ",
-    ).map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    tx.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    tx.commit().map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    validate_current_schema(conn)
-}
-fn migrate_event_completion_points(conn: &mut Connection) -> Result<(), DbError> {
-    // 方案A：为事件表新增"完成积分已发放"标记列，用于事件全部搞定时的一次性里程碑奖励与撤销回退。
-    conn.execute_batch(
-        "ALTER TABLE events ADD COLUMN completion_points_awarded INTEGER NOT NULL DEFAULT 0;",
-    )
-    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    validate_current_schema(conn)
-}
-
-fn create_pomodoro_reward_tables(conn: &Connection) -> Result<(), DbError> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS pomodoro_records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
-            action_id INTEGER REFERENCES actions(id) ON DELETE SET NULL,
-            start_time INTEGER NOT NULL,
-            end_time INTEGER,
-            planned_seconds INTEGER NOT NULL DEFAULT 1500,
-            actual_seconds INTEGER,
-            status INTEGER NOT NULL DEFAULT -1,
-            interrupt_type INTEGER,
-            interrupt_reason TEXT,
-            points_awarded INTEGER NOT NULL DEFAULT 0,
-            created_at INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_pomodoro_records_space_time ON pomodoro_records(space_id, start_time DESC);
-        CREATE TABLE IF NOT EXISTS rewards (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
-            name TEXT NOT NULL,
-            description TEXT,
-            points_required INTEGER NOT NULL,
-            category TEXT NOT NULL DEFAULT '其他',
-            icon TEXT NOT NULL DEFAULT '🎁',
-            status INTEGER NOT NULL DEFAULT 0,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_rewards_space_status ON rewards(space_id, status, created_at);
-        CREATE TABLE IF NOT EXISTS reward_exchanges (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
-            reward_id INTEGER NOT NULL REFERENCES rewards(id),
-            points_used INTEGER NOT NULL,
-            exchanged_at INTEGER NOT NULL,
-            created_at INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_reward_exchanges_space_time ON reward_exchanges(space_id, exchanged_at DESC);
-        CREATE TABLE IF NOT EXISTS user_points (
-            space_id TEXT PRIMARY KEY REFERENCES local_spaces(space_id),
-            total_points INTEGER NOT NULL DEFAULT 0,
-            updated_at INTEGER NOT NULL
-        );"
-    )
-    .map_err(|error| DbError::MigrationFailed(error.to_string()))
-}
-
-fn migrate_reward_metadata(conn: &mut Connection) -> Result<(), DbError> {
-    if !column_exists(conn, "rewards", "category")? {
-        conn.execute(
-            "ALTER TABLE rewards ADD COLUMN category TEXT NOT NULL DEFAULT '其他'",
-            [],
+fn migrate_add_quick_completion_marker(conn: &mut Connection) -> Result<(), DbError> {
+    if !column_exists(conn, "events", "is_quick_completed")? {
+        conn.execute_batch(
+            "ALTER TABLE events ADD COLUMN is_quick_completed INTEGER NOT NULL DEFAULT 0;",
         )
         .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
     }
-    if !column_exists(conn, "rewards", "icon")? {
-        conn.execute(
-            "ALTER TABLE rewards ADD COLUMN icon TEXT NOT NULL DEFAULT '🎁'",
-            [],
-        )
+    // 旧版快速完成会留下“已完成、无行动、获得基础 5 积分”的稳定特征，迁移时补齐标记。
+    conn.execute_batch(
+        "UPDATE events SET is_quick_completed = 1
+         WHERE status = 5 AND completion_points_awarded = 5
+           AND NOT EXISTS (SELECT 1 FROM actions WHERE actions.event_id = events.id AND actions.deleted_at IS NULL);",
+    )
+    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
         .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    }
-    migrate_recurring_actions(conn)?;
     Ok(())
 }
 
-fn migrate_recurring_actions(conn: &mut Connection) -> Result<(), DbError> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS recurring_actions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
-            sync_id TEXT NOT NULL UNIQUE,
-            deleted_at INTEGER,
-            title TEXT NOT NULL,
-            estimated_hours REAL NOT NULL DEFAULT 1,
-            is_frog INTEGER NOT NULL DEFAULT 0,
-            importance INTEGER NOT NULL DEFAULT 1,
-            urgency INTEGER NOT NULL DEFAULT 1,
-            priority INTEGER NOT NULL DEFAULT 4,
-            frequency_unit TEXT NOT NULL DEFAULT 'daily',
-            frequency_count INTEGER NOT NULL DEFAULT 1,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_recurring_actions_space_order ON recurring_actions(space_id, deleted_at, sort_order, id);"
-    )
-    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    validate_current_schema(conn)
-}
-
-fn migrate_pomodoro_rewards(conn: &mut Connection) -> Result<(), DbError> {
-    create_pomodoro_reward_tables(conn)?;
-    migrate_reward_metadata(conn)
-}
-
-fn remove_obsolete_daily_schedule_slot(conn: &mut Connection) -> Result<(), DbError> {
-    let tx = conn
-        .transaction()
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    tx.execute(
-        "DELETE FROM daily_schedule_templates WHERE start_time = '12:00' AND end_time = '13:30'",
-        [],
-    )
-    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    tx.execute(
-        "DELETE FROM daily_schedule_slots WHERE start_time = '12:00' AND end_time = '13:30'",
-        [],
-    )
-    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    tx.commit()
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))
-}
-
-fn migrate_sort_order(conn: &mut Connection) -> Result<(), DbError> {
-    if !column_exists(conn, "actions", "sort_order")? {
-        conn.execute(
-            "ALTER TABLE actions ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
-            [],
-        )
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    }
-    conn.execute(
-        "UPDATE actions SET sort_order = 0 WHERE sort_order IS NULL",
-        [],
-    )
-    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    migrate_daily_list(conn)
-}
-
-fn migrate_daily_list(conn: &mut Connection) -> Result<(), DbError> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS daily_list_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
-            action_id INTEGER NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
-            list_date TEXT NOT NULL,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            created_at INTEGER NOT NULL,
-            UNIQUE(space_id, action_id, list_date)
-        );
-        CREATE INDEX IF NOT EXISTS idx_daily_list_space_date ON daily_list_items(space_id, list_date, sort_order, id);"
-    )
-    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    migrate_daily_schedule(conn)
-}
-
-fn migrate_daily_schedule(conn: &mut Connection) -> Result<(), DbError> {
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS daily_schedule_days (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
-            list_date TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
-            UNIQUE(space_id, list_date)
-        );
-        CREATE TABLE IF NOT EXISTS daily_schedule_slots (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
-            list_date TEXT NOT NULL,
-            start_time TEXT NOT NULL,
-            end_time TEXT NOT NULL,
-            action_id INTEGER REFERENCES actions(id) ON DELETE SET NULL,
-            actual_notes TEXT,
-            met_expectation INTEGER,
-            focused INTEGER,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS daily_schedule_templates (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
-            start_time TEXT NOT NULL,
-            end_time TEXT NOT NULL,
-            sort_order INTEGER NOT NULL DEFAULT 0,
-            updated_at INTEGER NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_daily_schedule_days_space_date ON daily_schedule_days(space_id, list_date);
-        CREATE INDEX IF NOT EXISTS idx_daily_schedule_slots_space_date ON daily_schedule_slots(space_id, list_date, sort_order, start_time);
-        CREATE INDEX IF NOT EXISTS idx_daily_schedule_templates_space ON daily_schedule_templates(space_id, sort_order);"
-    )
-    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    create_pomodoro_reward_tables(conn)?;
-    migrate_recurring_actions(conn)?;
-    Ok(())
-}
-
-fn requires_legacy_migration(conn: &Connection) -> Result<bool, DbError> {
-    let version: i32 = conn
-        .pragma_query_value(None, "user_version", |row| row.get(0))
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    if version != 0 {
-        return Ok(false);
-    }
-    let events = table_exists(conn, "events")?;
-    let projects = table_exists(conn, "projects")?;
-    let actions = table_exists(conn, "actions")?;
-    if events || projects || actions {
-        if events && projects && actions {
-            return Ok(true);
+fn migrate_remove_projects(conn: &mut Connection, add_event_columns: bool) -> Result<(), DbError> {
+    let mut event_column_migration = String::new();
+    if add_event_columns {
+        for (column, definition) in [
+            ("target", "TEXT"),
+            ("estimated_hours", "REAL NOT NULL DEFAULT 1"),
+            ("start_date", "TEXT"),
+            ("deadline", "TEXT"),
+            ("importance", "INTEGER NOT NULL DEFAULT 1"),
+            ("urgency", "INTEGER NOT NULL DEFAULT 1"),
+            ("priority", "INTEGER NOT NULL DEFAULT 4"),
+            ("completion_points_awarded", "INTEGER NOT NULL DEFAULT 0"),
+            ("is_quick_completed", "INTEGER NOT NULL DEFAULT 0"),
+        ] {
+            if !column_exists(conn, "events", column)? {
+                event_column_migration.push_str(&format!(
+                    "ALTER TABLE events ADD COLUMN {column} {definition};"
+                ));
+            }
         }
-        return Err(DbError::MigrationFailed(
-            "database contains only part of the legacy business schema".into(),
-        ));
     }
-    Ok(false)
+    conn.execute_batch("PRAGMA foreign_keys = OFF;")
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    let result = (|| {
+        let tx = conn
+            .transaction()
+            .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+        if !event_column_migration.is_empty() {
+            tx.execute_batch(&event_column_migration)
+                .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+        }
+        // 已移除项目概念：不再保留仅归属于旧项目的行动。
+        tx.execute_batch(
+            "DELETE FROM actions WHERE event_id IS NULL;
+             CREATE TABLE actions_new (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+                 sync_id TEXT NOT NULL UNIQUE,
+                 deleted_at INTEGER,
+                 event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
+                 title TEXT NOT NULL,
+                 description TEXT,
+                 estimated_hours REAL NOT NULL DEFAULT 1,
+                 start_date TEXT,
+                 deadline TEXT,
+                 is_frog INTEGER NOT NULL DEFAULT 0,
+                 importance INTEGER NOT NULL DEFAULT 1,
+                 urgency INTEGER NOT NULL DEFAULT 1,
+                 priority INTEGER NOT NULL DEFAULT 4,
+                 status INTEGER NOT NULL DEFAULT 0,
+                 completed_at INTEGER,
+                 is_delegated_follow_up INTEGER NOT NULL DEFAULT 0,
+                 cascade_abandoned INTEGER NOT NULL DEFAULT 0,
+                 sort_order INTEGER NOT NULL DEFAULT 0,
+                 created_at INTEGER NOT NULL,
+                 updated_at INTEGER NOT NULL
+             );
+             INSERT INTO actions_new (id, space_id, sync_id, deleted_at, event_id, title, description, estimated_hours, start_date, deadline, is_frog, importance, urgency, priority, status, completed_at, is_delegated_follow_up, cascade_abandoned, sort_order, created_at, updated_at)
+             SELECT id, space_id, sync_id, deleted_at, event_id, title, description, estimated_hours, start_date, deadline, is_frog, importance, urgency, priority, status, completed_at, is_delegated_follow_up, cascade_abandoned, sort_order, created_at, updated_at FROM actions;
+             DROP TABLE actions;
+             ALTER TABLE actions_new RENAME TO actions;
+             DROP TABLE projects;
+             CREATE INDEX IF NOT EXISTS idx_actions_space_deleted ON actions(space_id, deleted_at);",
+        )
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+        tx.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
+            .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+        tx.commit()
+            .map_err(|error| DbError::MigrationFailed(error.to_string()))
+    })();
+    conn.execute_batch("PRAGMA foreign_keys = ON;")
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    result?;
+    validate_current_schema(conn)
 }
 
 fn table_exists(conn: &Connection, name: &str) -> Result<bool, DbError> {
@@ -529,6 +277,12 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool, D
 fn validate_current_schema(conn: &Connection) -> Result<(), DbError> {
     conn.execute_batch("CREATE TABLE IF NOT EXISTS daily_schedule_template_meta (space_id TEXT PRIMARY KEY REFERENCES local_spaces(space_id), updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS reward_checkins (id INTEGER PRIMARY KEY AUTOINCREMENT, space_id TEXT NOT NULL REFERENCES local_spaces(space_id), exchange_id INTEGER NOT NULL UNIQUE REFERENCES reward_exchanges(id) ON DELETE CASCADE, image_path TEXT, description TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS idx_reward_checkins_space ON reward_checkins(space_id);")
         .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    if !column_exists(conn, "events", "is_quick_completed")? {
+        conn.execute_batch(
+            "ALTER TABLE events ADD COLUMN is_quick_completed INTEGER NOT NULL DEFAULT 0;",
+        )
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    }
     // 自愈：无论经由哪条迁移路径（全新安装、11→13、12→13 等），都确保事件完成积分标记列存在，避免版本跳级时遗漏。
     if !column_exists(conn, "events", "completion_points_awarded")? {
         conn.execute_batch(
@@ -536,6 +290,13 @@ fn validate_current_schema(conn: &Connection) -> Result<(), DbError> {
         )
         .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
     }
+    // 所有旧版迁移路径均可识别此前的快速完成记录，避免 v13/v14 直接升级时漏标。
+    conn.execute_batch(
+        "UPDATE events SET is_quick_completed = 1
+         WHERE status = 5 AND completion_points_awarded = 5
+           AND NOT EXISTS (SELECT 1 FROM actions WHERE actions.event_id = events.id AND actions.deleted_at IS NULL);",
+    )
+    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
     for (table, columns) in [
         (
             "local_spaces",
@@ -543,7 +304,6 @@ fn validate_current_schema(conn: &Connection) -> Result<(), DbError> {
         ),
         ("settings", &["key", "value", "updated_at"][..]),
         ("events", &["space_id", "sync_id", "deleted_at"][..]),
-        ("projects", &["space_id", "sync_id", "deleted_at"][..]),
         (
             "actions",
             &["space_id", "sync_id", "deleted_at", "sort_order"][..],
@@ -639,251 +399,6 @@ fn validate_current_schema(conn: &Connection) -> Result<(), DbError> {
                 )));
             }
         }
-    }
-    Ok(())
-}
-
-fn migrate_legacy(conn: &mut Connection) -> Result<(), DbError> {
-    validate_legacy_relations(conn)?;
-    conn.execute_batch("PRAGMA foreign_keys = OFF;")
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-
-    let result = (|| {
-        let tx = conn
-            .transaction()
-            .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-        let space_id = new_uuid();
-        let now = now_millis();
-
-        tx.execute_batch(
-            "CREATE TABLE local_spaces (space_id TEXT PRIMARY KEY, cloud_user_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);",
-        )
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-        tx.execute(
-            "INSERT INTO local_spaces (space_id, created_at, updated_at) VALUES (?1, ?2, ?2)",
-            params![space_id, now],
-        )
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-        tx.execute_batch(
-            "ALTER TABLE events RENAME TO events_legacy;
-             ALTER TABLE projects RENAME TO projects_legacy;
-             ALTER TABLE actions RENAME TO actions_legacy;",
-        )
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-        tx.execute_batch(migrations::INIT_MIGRATION)
-            .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-
-        copy_legacy_events(&tx, &space_id)?;
-        copy_legacy_projects(&tx, &space_id)?;
-        copy_legacy_actions(&tx, &space_id)?;
-
-        tx.execute_batch(
-            "DROP TABLE events_legacy; DROP TABLE projects_legacy; DROP TABLE actions_legacy;",
-        )
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-        tx.execute(
-            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('current_space_id', ?1, ?2)",
-            params![space_id, now],
-        )
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-        tx.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
-            .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-        tx.commit()
-            .map_err(|error| DbError::MigrationFailed(error.to_string()))
-    })();
-
-    conn.execute_batch("PRAGMA foreign_keys = ON;")
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    result?;
-    validate_database(conn)
-}
-
-fn copy_legacy_events(tx: &rusqlite::Transaction<'_>, space_id: &str) -> Result<(), DbError> {
-    let mut statement = tx
-        .prepare("SELECT id, title, status, delegated_to, follow_up_date, follow_up_note, delay_until, delay_note, abandon_reason, created_at, updated_at FROM events_legacy ORDER BY id")
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i32>(2)?,
-                row.get::<_, Option<String>>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, Option<String>>(5)?,
-                row.get::<_, Option<String>>(6)?,
-                row.get::<_, Option<String>>(7)?,
-                row.get::<_, Option<String>>(8)?,
-                row.get::<_, i64>(9)?,
-                row.get::<_, i64>(10)?,
-            ))
-        })
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    for row in rows {
-        let (
-            id,
-            title,
-            status,
-            delegated_to,
-            follow_up_date,
-            follow_up_note,
-            delay_until,
-            delay_note,
-            abandon_reason,
-            created_at,
-            updated_at,
-        ) = row.map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-        tx.execute(
-            "INSERT INTO events (id, space_id, sync_id, title, status, delegated_to, follow_up_date, follow_up_note, delay_until, delay_note, abandon_reason, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
-            params![id, space_id, new_uuid(), title, status, delegated_to, follow_up_date, follow_up_note, delay_until, delay_note, abandon_reason, created_at * 1000, updated_at * 1000],
-        )
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    }
-    Ok(())
-}
-
-fn copy_legacy_projects(tx: &rusqlite::Transaction<'_>, space_id: &str) -> Result<(), DbError> {
-    let mut statement = tx
-        .prepare("SELECT id, event_id, title, target, estimated_hours, start_date, deadline, importance, urgency, priority, status, created_at, updated_at FROM projects_legacy ORDER BY id")
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, Option<String>>(3)?,
-                row.get::<_, f64>(4)?,
-                row.get::<_, Option<String>>(5)?,
-                row.get::<_, Option<String>>(6)?,
-                row.get::<_, i32>(7)?,
-                row.get::<_, i32>(8)?,
-                row.get::<_, i32>(9)?,
-                row.get::<_, i32>(10)?,
-                row.get::<_, i64>(11)?,
-                row.get::<_, i64>(12)?,
-            ))
-        })
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    for row in rows {
-        let (
-            id,
-            event_id,
-            title,
-            target,
-            estimated_hours,
-            start_date,
-            deadline,
-            importance,
-            urgency,
-            priority,
-            status,
-            created_at,
-            updated_at,
-        ) = row.map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-        tx.execute(
-            "INSERT INTO projects (id, space_id, sync_id, event_id, title, target, estimated_hours, start_date, deadline, importance, urgency, priority, status, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-            params![id, space_id, new_uuid(), event_id, title, target, estimated_hours, start_date, deadline, importance, urgency, priority, status, created_at * 1000, updated_at * 1000],
-        )
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    }
-    Ok(())
-}
-
-fn copy_legacy_actions(tx: &rusqlite::Transaction<'_>, space_id: &str) -> Result<(), DbError> {
-    let mut statement = tx
-        .prepare("SELECT id, event_id, project_id, title, description, estimated_hours, start_date, deadline, is_frog, importance, urgency, priority, status, completed_at, is_delegated_follow_up, cascade_abandoned, created_at, updated_at FROM actions_legacy ORDER BY id")
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, Option<i64>>(1)?,
-                row.get::<_, Option<i64>>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, f64>(5)?,
-                row.get::<_, Option<String>>(6)?,
-                row.get::<_, Option<String>>(7)?,
-                row.get::<_, i32>(8)?,
-                row.get::<_, i32>(9)?,
-                row.get::<_, i32>(10)?,
-                row.get::<_, i32>(11)?,
-                row.get::<_, i32>(12)?,
-                row.get::<_, Option<i64>>(13)?,
-                row.get::<_, i32>(14)?,
-                row.get::<_, i32>(15)?,
-                row.get::<_, i64>(16)?,
-                row.get::<_, i64>(17)?,
-            ))
-        })
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    for row in rows {
-        let (
-            id,
-            event_id,
-            project_id,
-            title,
-            description,
-            estimated_hours,
-            start_date,
-            deadline,
-            is_frog,
-            importance,
-            urgency,
-            priority,
-            status,
-            completed_at,
-            is_delegated_follow_up,
-            cascade_abandoned,
-            created_at,
-            updated_at,
-        ) = row.map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-        tx.execute(
-            "INSERT INTO actions (id, space_id, sync_id, event_id, project_id, title, description, estimated_hours, start_date, deadline, is_frog, importance, urgency, priority, status, completed_at, is_delegated_follow_up, cascade_abandoned, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
-            params![id, space_id, new_uuid(), event_id, project_id, title, description, estimated_hours, start_date, deadline, is_frog, importance, urgency, priority, status, completed_at.map(|value| value * 1000), is_delegated_follow_up, cascade_abandoned, created_at * 1000, updated_at * 1000],
-        )
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    }
-    Ok(())
-}
-
-fn validate_legacy_relations(conn: &Connection) -> Result<(), DbError> {
-    let invalid_projects: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM projects WHERE event_id IS NULL OR event_id NOT IN (SELECT id FROM events)",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    let invalid_actions: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM actions WHERE (event_id IS NOT NULL AND event_id NOT IN (SELECT id FROM events)) OR (project_id IS NOT NULL AND project_id NOT IN (SELECT id FROM projects)) OR (event_id IS NOT NULL AND project_id IS NOT NULL)",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    if invalid_projects > 0 || invalid_actions > 0 {
-        return Err(DbError::MigrationFailed(
-            "legacy relationship validation failed".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn validate_database(conn: &Connection) -> Result<(), DbError> {
-    let foreign_key_errors: i64 = conn
-        .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
-            row.get(0)
-        })
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    let integrity: String = conn
-        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
-        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-    if foreign_key_errors > 0 || integrity != "ok" {
-        return Err(DbError::MigrationFailed(format!(
-            "database validation failed: foreign keys={foreign_key_errors}, integrity={integrity}"
-        )));
     }
     Ok(())
 }

@@ -1,6 +1,7 @@
 use crate::db::{current_space_id, new_uuid, now_millis};
 use crate::models::{
-    NewReward, Reward, RewardCheckin, RewardCheckinBrief, RewardExchange, RewardsOverview, UpdateReward,
+    NewReward, Reward, RewardCheckin, RewardCheckinBrief, RewardExchange, RewardsOverview,
+    UpdateReward,
 };
 use crate::AppState;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
@@ -181,7 +182,6 @@ pub fn exchange_reward(
     overview(&conn, &space).map_err(|error| error.to_string())
 }
 
-
 /// 打卡图片存放目录（与数据库同级的 checkins 文件夹）。
 fn checkins_dir() -> Result<PathBuf, String> {
     let db = crate::db::db_path().map_err(|error| error.to_string())?;
@@ -252,12 +252,15 @@ pub fn save_reward_checkin(
         .map_err(|error| error.to_string())?
         .flatten();
     let mut image_path = old_image.clone();
-    let trimmed = description.map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
+    let trimmed = description
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     if let Some(data_url) = image_base64.filter(|value| !value.trim().is_empty()) {
         let (ext, bytes) = decode_data_url(&data_url)?;
         let filename = format!("{}.{}", new_uuid(), ext);
         let dir = checkins_dir()?;
-        std::fs::write(dir.join(&filename), &bytes).map_err(|error| format!("保存图片失败：{error}"))?;
+        std::fs::write(dir.join(&filename), &bytes)
+            .map_err(|error| format!("保存图片失败：{error}"))?;
         if let Some(old) = old_image.as_ref() {
             let _ = std::fs::remove_file(dir.join(old));
         }
@@ -273,7 +276,10 @@ pub fn save_reward_checkin(
 }
 
 #[tauri::command]
-pub fn get_reward_checkin(state: State<'_, AppState>, exchange_id: i64) -> Result<RewardCheckin, String> {
+pub fn get_reward_checkin(
+    state: State<'_, AppState>,
+    exchange_id: i64,
+) -> Result<RewardCheckin, String> {
     let conn = state.db.lock().map_err(|error| error.to_string())?;
     let space = current_space_id(&conn).map_err(|error| error.to_string())?;
     let row = conn
@@ -307,7 +313,11 @@ pub fn get_reward_checkin(state: State<'_, AppState>, exchange_id: i64) -> Resul
                         .and_then(|value| value.to_str())
                         .unwrap_or("png")
                         .to_ascii_lowercase();
-                    Some(format!("data:{};base64,{}", ext_to_mime(&ext), B64.encode(&bytes)))
+                    Some(format!(
+                        "data:{};base64,{}",
+                        ext_to_mime(&ext),
+                        B64.encode(&bytes)
+                    ))
                 }
                 Err(_) => None,
             }
@@ -333,7 +343,11 @@ pub fn save_reward_poster(image_base64: String) -> Result<String, String> {
     let (_ext, bytes) = decode_data_url(&image_base64)?;
     let dir = dirs::download_dir()
         .or_else(dirs::desktop_dir)
-        .or_else(|| crate::db::db_path().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())))
+        .or_else(|| {
+            crate::db::db_path()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        })
         .ok_or_else(|| "无法定位保存目录".to_string())?;
     std::fs::create_dir_all(&dir).map_err(|error| format!("创建保存目录失败：{error}"))?;
     let filename = format!("LifePlan打卡_{}.png", now_millis());

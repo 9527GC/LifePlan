@@ -16,17 +16,16 @@ fn row_to_event(row: &rusqlite::Row) -> rusqlite::Result<Event> {
         delay_until: row.get(6)?,
         delay_note: row.get(7)?,
         abandon_reason: row.get(8)?,
-        project_id: row.get(9)?,
-        project_title: row.get(10)?,
-        target: row.get(11)?,
-        deadline: row.get(12)?,
-        importance: row.get(13)?,
-        urgency: row.get(14)?,
-        action_count: row.get(15)?,
-        pending_action_count: row.get(16)?,
-        completed_action_count: row.get(17)?,
-        created_at: row.get(18)?,
-        updated_at: row.get(19)?,
+        target: row.get(9)?,
+        deadline: row.get(10)?,
+        importance: row.get(11)?,
+        urgency: row.get(12)?,
+        action_count: row.get(13)?,
+        pending_action_count: row.get(14)?,
+        completed_action_count: row.get(15)?,
+        is_quick_completed: row.get(16)?,
+        created_at: row.get(17)?,
+        updated_at: row.get(18)?,
     })
 }
 
@@ -127,16 +126,14 @@ pub fn list_events(conn: &Connection) -> rusqlite::Result<Vec<Event>> {
     let mut statement = conn.prepare(
         "SELECT e.id, e.title, e.status, e.delegated_to, e.follow_up_date,
                 e.follow_up_note, e.delay_until, e.delay_note, e.abandon_reason,
-                p.id, p.title, COALESCE(e.target, p.target), COALESCE(e.deadline, p.deadline),
-                 COALESCE(e.importance, p.importance), COALESCE(e.urgency, p.urgency), COUNT(a.id),
+                e.target, e.deadline,
+                 e.importance, e.urgency, COUNT(a.id),
                 COALESCE(SUM(CASE WHEN a.status = 0 THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN a.status = 1 THEN 1 ELSE 0 END), 0),
-                e.created_at, e.updated_at
+                e.is_quick_completed, e.created_at, e.updated_at
          FROM events e
-         LEFT JOIN projects p ON p.event_id = e.id AND p.space_id = e.space_id
-                              AND p.deleted_at IS NULL
          LEFT JOIN actions a ON a.space_id = e.space_id AND a.deleted_at IS NULL
-                             AND (a.event_id = e.id OR a.project_id = p.id)
+                              AND a.event_id = e.id
          WHERE e.space_id = ?1 AND e.deleted_at IS NULL
          GROUP BY e.id
          ORDER BY CASE WHEN e.status IN (0, 3) THEN 0 ELSE 1 END,
@@ -183,32 +180,48 @@ pub fn update_event(state: State<'_, AppState>, payload: UpdateEvent) -> Result<
     if title.is_empty() {
         return Err("事件标题不能为空".into());
     }
-    let importance = payload.importance.unwrap_or(1);
-    let urgency = payload.urgency.unwrap_or(1);
-    if ![0, 1].contains(&importance) || ![0, 1].contains(&urgency) {
-        return Err("重要程度和紧急程度无效".into());
-    }
     let mut conn = state.db.lock().map_err(|error| error.to_string())?;
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     let space_id = current_space_id(&tx).map_err(|error| error.to_string())?;
-    let timestamp = now_millis();
-    let priority = calculate_priority(importance, urgency);
-    let changed = tx.execute(
-        "UPDATE events SET title = ?1, target = ?2, deadline = ?3, importance = ?4, urgency = ?5, priority = ?6, updated_at = ?7 WHERE id = ?8 AND space_id = ?9 AND deleted_at IS NULL",
-        params![title, payload.target.as_deref(), payload.deadline.as_deref(), importance, urgency, priority, timestamp, payload.id, space_id],
-    ).map_err(|error| error.to_string())?;
-    if changed == 0 {
+    let status: Option<i32> = tx
+        .query_row(
+            "SELECT status FROM events WHERE id = ?1 AND space_id = ?2 AND deleted_at IS NULL",
+            params![payload.id, space_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let Some(status) = status else {
         return Err("事件不存在".into());
+    };
+
+    let timestamp = now_millis();
+    if status == 5 {
+        // 已完成事件只允许更正标题，避免改变已完成记录的原始属性。
+        tx.execute(
+            "UPDATE events SET title = ?1, updated_at = ?2 WHERE id = ?3 AND space_id = ?4 AND deleted_at IS NULL",
+            params![title, timestamp, payload.id, space_id],
+        )
+        .map_err(|error| error.to_string())?;
+    } else {
+        let importance = payload.importance.unwrap_or(1);
+        let urgency = payload.urgency.unwrap_or(1);
+        if ![0, 1].contains(&importance) || ![0, 1].contains(&urgency) {
+            return Err("重要程度和紧急程度无效".into());
+        }
+        let priority = calculate_priority(importance, urgency);
+        tx.execute(
+            "UPDATE events SET title = ?1, target = ?2, deadline = ?3, importance = ?4, urgency = ?5, priority = ?6, updated_at = ?7 WHERE id = ?8 AND space_id = ?9 AND deleted_at IS NULL",
+            params![title, payload.target.as_deref(), payload.deadline.as_deref(), importance, urgency, priority, timestamp, payload.id, space_id],
+        )
+        .map_err(|error| error.to_string())?;
+        // 事件属性同步到其全部行动，保证事件成为唯一的归属来源。
+        tx.execute(
+            "UPDATE actions SET importance = ?1, urgency = ?2, priority = ?3, updated_at = ?4 WHERE space_id = ?5 AND deleted_at IS NULL AND event_id = ?6",
+            params![importance, urgency, priority, timestamp, space_id, payload.id],
+        )
+        .map_err(|error| error.to_string())?;
     }
-    // 同步旧版关联记录和历史行动，保证已有数据仍能以事件语义正常工作。
-    tx.execute(
-        "UPDATE projects SET title = ?1, target = ?2, deadline = ?3, importance = ?4, urgency = ?5, priority = ?6, updated_at = ?7 WHERE event_id = ?8 AND space_id = ?9 AND deleted_at IS NULL",
-        params![title, payload.target.as_deref(), payload.deadline.as_deref(), importance, urgency, priority, timestamp, payload.id, space_id],
-    ).map_err(|error| error.to_string())?;
-    tx.execute(
-        "UPDATE actions SET importance = ?1, urgency = ?2, priority = ?3, updated_at = ?4 WHERE space_id = ?5 AND deleted_at IS NULL AND (event_id = ?6 OR project_id IN (SELECT id FROM projects WHERE event_id = ?6 AND space_id = ?5 AND deleted_at IS NULL))",
-        params![importance, urgency, priority, timestamp, space_id, payload.id],
-    ).map_err(|error| error.to_string())?;
     tx.commit().map_err(|error| error.to_string())?;
     list_events(&conn)
         .map_err(|error| error.to_string())?
@@ -216,7 +229,6 @@ pub fn update_event(state: State<'_, AppState>, payload: UpdateEvent) -> Result<
         .find(|event| event.id == payload.id)
         .ok_or_else(|| "事件不存在".into())
 }
-
 #[tauri::command]
 pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Result<(), String> {
     let mut conn = state.db.lock().map_err(|error| error.to_string())?;
@@ -241,12 +253,13 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
     let timestamp = now_millis();
     match payload.decision.as_str() {
         "self" => {
-            let action_steps = payload
-                .action_steps
-                .as_ref()
-                .ok_or_else(|| "至少需要填写一条行动".to_string())?;
-            if action_steps.is_empty() {
+            let quick_complete = payload.quick_complete.unwrap_or(false);
+            let action_steps = payload.action_steps.as_deref().unwrap_or(&[]);
+            if !quick_complete && action_steps.is_empty() {
                 return Err("至少需要填写一条行动".into());
+            }
+            if quick_complete && !action_steps.is_empty() {
+                return Err("2分钟小事不能同时添加行动".into());
             }
             for step in action_steps {
                 if step.title.trim().is_empty() {
@@ -268,7 +281,11 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
             for step in action_steps {
                 tx.execute("INSERT INTO actions (space_id, sync_id, event_id, title, estimated_hours, start_date, deadline, importance, urgency, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)", params![space_id, new_uuid(), payload.event_id, step.title.trim(), step.estimated_hours, step.start_date.as_deref(), payload.deadline.as_deref(), importance, urgency, calculate_priority(importance, urgency), timestamp]).map_err(|error| error.to_string())?;
             }
-            tx.execute("UPDATE events SET title = ?1, target = ?2, deadline = ?3, importance = ?4, urgency = ?5, priority = ?6, status = 1, updated_at = ?7 WHERE id = ?8 AND space_id = ?9 AND deleted_at IS NULL", params![payload.project_title.as_deref().unwrap_or(""), payload.target.as_deref(), payload.deadline.as_deref(), importance, urgency, calculate_priority(importance, urgency), timestamp, payload.event_id, space_id]).map_err(|error| error.to_string())?;
+            let event_status = if quick_complete { 5 } else { 1 };
+            tx.execute("UPDATE events SET title = ?1, target = ?2, deadline = ?3, importance = ?4, urgency = ?5, priority = ?6, status = ?7, is_quick_completed = ?8, updated_at = ?9 WHERE id = ?10 AND space_id = ?11 AND deleted_at IS NULL", params![payload.title.as_deref().unwrap_or(""), payload.target.as_deref(), payload.deadline.as_deref(), importance, urgency, calculate_priority(importance, urgency), event_status, i32::from(quick_complete), timestamp, payload.event_id, space_id]).map_err(|error| error.to_string())?;
+            if quick_complete {
+                award_event_completion_tx(&tx, payload.event_id, &space_id, 0)?;
+            }
         }
         "delegate" => {
             let delegated_to = payload.delegated_to.as_deref().unwrap_or("").trim();
@@ -367,18 +384,9 @@ pub(crate) fn abandon_event_tx(
     )
     .map_err(|error| error.to_string())?;
     tx.execute(
-        "UPDATE projects SET status = 2, updated_at = ?1
-         WHERE event_id = ?2 AND space_id = ?3 AND deleted_at IS NULL",
-        params![timestamp, event_id, space_id],
-    )
-    .map_err(|error| error.to_string())?;
-    tx.execute(
         "UPDATE actions SET status = 2, cascade_abandoned = 1, updated_at = ?1
          WHERE status = 0 AND space_id = ?3 AND deleted_at IS NULL
-           AND (event_id = ?2 OR project_id IN (
-               SELECT id FROM projects
-               WHERE event_id = ?2 AND space_id = ?3 AND deleted_at IS NULL
-           ))",
+            AND event_id = ?2",
         params![timestamp, event_id, space_id],
     )
     .map_err(|error| error.to_string())?;
@@ -393,20 +401,15 @@ pub fn complete_event(
     let mut conn = state.db.lock().map_err(|error| error.to_string())?;
     let tx = conn.transaction().map_err(|error| error.to_string())?;
     let space_id = current_space_id(&tx).map_err(|error| error.to_string())?;
-    let (status, has_project): (i32, i64) = tx
+    let status: i32 = tx
         .query_row(
-            "SELECT e.status,
-                    EXISTS(SELECT 1 FROM projects p
-                           WHERE p.event_id = e.id AND p.space_id = ?2
-                             AND p.deleted_at IS NULL)
-             FROM events e
-             WHERE e.id = ?1 AND e.space_id = ?2 AND e.deleted_at IS NULL",
+            "SELECT status FROM events WHERE id = ?1 AND space_id = ?2 AND deleted_at IS NULL",
             params![event_id, space_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| row.get(0),
         )
         .map_err(|error| error.to_string())?;
-    if status != 0 || has_project != 0 {
-        return Err("只有未转项目的未处理事件才能直接完成".into());
+    if status != 1 {
+        return Err("只有进行中的事件才能标记完成".into());
     }
     let (action_count, completed): (i64, i64) = tx
         .query_row(
@@ -458,10 +461,7 @@ pub fn restore_event(state: State<'_, AppState>, event_id: i64) -> Result<(), St
         return Err("只有已放弃事件可以恢复".into());
     }
     tx.execute(
-        "UPDATE events SET status = CASE WHEN EXISTS (
-             SELECT 1 FROM projects WHERE event_id = events.id AND space_id = ?3
-               AND deleted_at IS NULL
-         ) THEN 1 ELSE 0 END,
+        "UPDATE events SET status = 1,
          delegated_to = NULL, follow_up_date = NULL, follow_up_note = NULL,
          delay_until = NULL, delay_note = NULL, abandon_reason = NULL,
          updated_at = ?1
@@ -470,18 +470,9 @@ pub fn restore_event(state: State<'_, AppState>, event_id: i64) -> Result<(), St
     )
     .map_err(|error| error.to_string())?;
     tx.execute(
-        "UPDATE projects SET status = 0, updated_at = ?1
-         WHERE event_id = ?2 AND status = 2 AND space_id = ?3 AND deleted_at IS NULL",
-        params![timestamp, event_id, space_id],
-    )
-    .map_err(|error| error.to_string())?;
-    tx.execute(
         "UPDATE actions SET status = 0, cascade_abandoned = 0, updated_at = ?1
          WHERE status = 2 AND cascade_abandoned = 1 AND space_id = ?3
-           AND deleted_at IS NULL AND (event_id = ?2 OR project_id IN (
-               SELECT id FROM projects
-               WHERE event_id = ?2 AND space_id = ?3 AND deleted_at IS NULL
-           ))",
+           AND deleted_at IS NULL AND event_id = ?2",
         params![timestamp, event_id, space_id],
     )
     .map_err(|error| error.to_string())?;
@@ -505,16 +496,8 @@ pub fn delete_event(state: State<'_, AppState>, id: i64) -> Result<(), String> {
         return Err("事件不存在或已删除".into());
     }
     tx.execute(
-        "UPDATE projects SET deleted_at = ?1, updated_at = ?1
-         WHERE event_id = ?2 AND space_id = ?3 AND deleted_at IS NULL",
-        params![timestamp, id, space_id],
-    )
-    .map_err(|error| error.to_string())?;
-    tx.execute(
         "UPDATE actions SET deleted_at = ?1, updated_at = ?1
-         WHERE space_id = ?2 AND deleted_at IS NULL AND (event_id = ?3 OR project_id IN (
-             SELECT id FROM projects WHERE event_id = ?3 AND space_id = ?2
-         ))",
+         WHERE space_id = ?2 AND deleted_at IS NULL AND event_id = ?3",
         params![timestamp, space_id, id],
     )
     .map_err(|error| error.to_string())?;

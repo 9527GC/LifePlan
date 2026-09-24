@@ -1,6 +1,6 @@
 use crate::commands::{
-    actions, analytics, daily_list, daily_schedule, events, pomodoro, projects, recurring_actions,
-    rewards, system,
+    actions, analytics, daily_list, daily_schedule, events, pomodoro, recurring_actions, rewards,
+    system,
 };
 use crate::db::init_db;
 pub use crate::db::AppState;
@@ -169,16 +169,10 @@ pub fn run() {
             events::process_event,
             events::complete_event,
             events::restore_event,
-            projects::get_projects,
-            projects::update_project,
-            projects::delete_project,
-            projects::complete_project,
-            projects::abandon_project,
             actions::get_actions,
             actions::create_action,
             actions::update_action,
             actions::complete_action,
-            actions::reorder_project_actions,
             actions::reorder_event_actions,
             actions::restore_action,
             actions::delete_action,

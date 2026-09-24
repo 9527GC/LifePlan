@@ -9,26 +9,24 @@ fn row_to_action(row: &rusqlite::Row, offset: usize) -> rusqlite::Result<Action>
     Ok(Action {
         id: row.get(offset)?,
         event_id: row.get(offset + 1)?,
-        project_id: row.get(offset + 2)?,
-        event_title: row.get(offset + 3)?,
-        project_title: row.get(offset + 4)?,
-        delegated_to: row.get(offset + 5)?,
-        title: row.get(offset + 6)?,
-        description: row.get(offset + 7)?,
-        estimated_hours: row.get(offset + 8)?,
-        start_date: row.get(offset + 9)?,
-        deadline: row.get(offset + 10)?,
-        is_frog: row.get(offset + 11)?,
-        importance: row.get(offset + 12)?,
-        urgency: row.get(offset + 13)?,
-        priority: row.get(offset + 14)?,
-        status: row.get(offset + 15)?,
-        completed_at: row.get(offset + 16)?,
-        is_delegated_follow_up: row.get(offset + 17)?,
-        cascade_abandoned: row.get(offset + 18)?,
-        sort_order: row.get(offset + 19)?,
-        created_at: row.get(offset + 20)?,
-        updated_at: row.get(offset + 21)?,
+        event_title: row.get(offset + 2)?,
+        delegated_to: row.get(offset + 3)?,
+        title: row.get(offset + 4)?,
+        description: row.get(offset + 5)?,
+        estimated_hours: row.get(offset + 6)?,
+        start_date: row.get(offset + 7)?,
+        deadline: row.get(offset + 8)?,
+        is_frog: row.get(offset + 9)?,
+        importance: row.get(offset + 10)?,
+        urgency: row.get(offset + 11)?,
+        priority: row.get(offset + 12)?,
+        status: row.get(offset + 13)?,
+        completed_at: row.get(offset + 14)?,
+        is_delegated_follow_up: row.get(offset + 15)?,
+        cascade_abandoned: row.get(offset + 16)?,
+        sort_order: row.get(offset + 17)?,
+        created_at: row.get(offset + 18)?,
+        updated_at: row.get(offset + 19)?,
     })
 }
 
@@ -37,16 +35,15 @@ fn list_items(conn: &Connection, list_date: &str) -> rusqlite::Result<Vec<DailyL
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     let mut statement = conn.prepare(
         "SELECT d.id, d.action_id, d.list_date, d.sort_order,
-                a.id, COALESCE(a.event_id, p.event_id), a.project_id, COALESCE(e.title, pe.title), p.title, COALESCE(e.delegated_to, pe.delegated_to),
+                a.id, a.event_id, e.title, e.delegated_to,
                 a.title, a.description, a.estimated_hours, a.start_date, a.deadline,
-                a.is_frog, COALESCE(p.importance, a.importance), COALESCE(p.urgency, a.urgency),
-                COALESCE(p.priority, a.priority), a.status, a.completed_at,
+                a.is_frog, a.importance, a.urgency,
+                a.priority, a.status, a.completed_at,
                 a.is_delegated_follow_up, a.cascade_abandoned, COALESCE(a.sort_order, 0),
                 a.created_at, a.updated_at
          FROM daily_list_items d
          JOIN actions a ON a.id = d.action_id AND a.space_id = d.space_id AND a.deleted_at IS NULL
          LEFT JOIN events e ON e.id = a.event_id AND e.space_id = a.space_id AND e.deleted_at IS NULL
-         LEFT JOIN projects p ON p.id = a.project_id AND p.space_id = a.space_id AND p.deleted_at IS NULL LEFT JOIN events pe ON pe.id = p.event_id AND pe.space_id = p.space_id AND pe.deleted_at IS NULL
          WHERE d.space_id = ?1 AND d.list_date = ?2
          ORDER BY d.sort_order, d.id"
     )?;

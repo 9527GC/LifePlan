@@ -164,7 +164,6 @@ pub fn update_recurring_action(
         .ok_or_else(|| "更新重复行动后读取失败".into())
 }
 
-
 #[tauri::command]
 pub fn delete_recurring_action(
     state: State<'_, AppState>,
@@ -252,5 +251,3 @@ pub fn create_action_from_recurring(
         .find(|action| action.id == action_id)
         .ok_or_else(|| "生成行动后读取失败".into())
 }
-
-

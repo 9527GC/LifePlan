@@ -16,8 +16,6 @@ export interface Event {
   delay_until?: string;
   delay_note?: string;
   abandon_reason?: string;
-  project_id?: number | null;
-  project_title?: string | null;
   target?: string;
   deadline?: string;
   importance?: number;
@@ -25,26 +23,7 @@ export interface Event {
   action_count: number;
   pending_action_count: number;
   completed_action_count: number;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface Project {
-  id: number;
-  event_id: number;
-  event_title: string;
-  title: string;
-  target?: string;
-  estimated_hours: number;
-  start_date?: string;
-  deadline?: string;
-  importance: number;
-  urgency: number;
-  priority: number;
-  status: 0 | 1 | 2;
-  action_count: number;
-  completed_action_count: number;
-  pending_action_count: number;
+  is_quick_completed: number;
   created_at: number;
   updated_at: number;
 }
@@ -52,9 +31,7 @@ export interface Project {
 export interface Action {
   id: number;
   event_id?: number | null;
-  project_id?: number | null;
   event_title?: string | null;
-  project_title?: string | null;
   delegated_to?: string;
   title: string;
   description?: string;
@@ -94,7 +71,8 @@ export interface UpdateEvent {
 export interface ProcessEvent {
   event_id: number;
   decision: "self" | "delegate" | "delay" | "abandon";
-  project_title?: string;
+  quick_complete?: boolean;
+  title?: string;
   target?: string;
   start_date?: string;
   deadline?: string;
@@ -115,19 +93,8 @@ export interface ProcessActionStep {
   start_date?: string;
 }
 
-export interface UpdateProject {
-  id: number;
-  title: string;
-  target?: string;
-  start_date?: string;
-  deadline?: string;
-  importance: number;
-  urgency: number;
-}
-
 export interface NewAction {
   event_id?: number;
-  project_id?: number;
   title: string;
   description?: string;
   estimated_hours: number;
@@ -137,8 +104,7 @@ export interface NewAction {
   importance: number;
   urgency: number;
 }
-export type UpdateAction = Omit<NewAction, "event_id" | "project_id"> & { id: number };
-export interface ReorderProjectActions { project_id: number; action_ids: number[] }
+export type UpdateAction = Omit<NewAction, "event_id"> & { id: number };
 export interface ReorderEventActions { event_id: number; action_ids: number[] }
 
 export type RecurringFrequencyUnit = "daily" | "weekly" | "monthly";
