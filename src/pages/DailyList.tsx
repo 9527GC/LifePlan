@@ -210,7 +210,7 @@ function ActionPickerModal({ slot, slots, actions, onGuideToInbox, onClose, onSt
     setViewing(Boolean(slot.action));
     void recurringActionsApi.list().then(setRecurringActions).catch((cause) => message.error(userFacingError(cause)));
   }, [slot]);
-  const selectableActions = actions.filter((action) => action.status === 0);
+  const selectableActions = actions.filter((action) => action.status === 0 && action.event_id != null);
   const visibleActions = selectableActions.filter((action) => action.title.toLowerCase().includes(query.trim().toLowerCase()) || action.description?.toLowerCase().includes(query.trim().toLowerCase()));
   const flatVisibleActions = useMemo(() => sortDailyActions(visibleActions), [visibleActions]);
   const visibleRecurringActions = recurringActions.filter((action) => action.title.toLowerCase().includes(recurringQuery.trim().toLowerCase()));
