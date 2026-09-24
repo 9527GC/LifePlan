@@ -336,6 +336,22 @@ function ActionPickerModal({ slot, slots, actions, onGuideToInbox, onClose, onSt
     }
   };
 
+  const deleteRecurring = async () => {
+    if (!editingRecurringAction) return;
+    setSaving(true);
+    try {
+      await recurringActionsApi.delete(editingRecurringAction.id);
+      setRecurringActions((current) => current.filter((item) => item.id !== editingRecurringAction.id));
+      setEditingRecurringAction(null);
+      setMode("recurring");
+      message.success("重复行动已删除");
+    } catch (cause) {
+      message.error(userFacingError(cause));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const updateRecurring = async (payload: NewRecurringAction | UpdateRecurringAction) => {
     setSaving(true);
     try {
@@ -359,7 +375,7 @@ function ActionPickerModal({ slot, slots, actions, onGuideToInbox, onClose, onSt
     {mode === "recurring" && <><div className="daily-picker-search-row"><Input allowClear value={recurringQuery} onChange={(event) => setRecurringQuery(event.target.value)} placeholder="搜索重复行动标题" /><Button icon={<Plus size={15} />} onClick={() => setMode("new-recurring")}>新增重复行动</Button></div><div className="daily-action-picker-list">{visibleRecurringActions.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={recurringActions.length === 0 ? "还没有重复行动" : "没有符合条件的重复行动"} /> : visibleRecurringActions.map((action, index) => { const actualIndex = recurringActions.findIndex((item) => item.id === action.id); return <div className="daily-recurring-picker-item" key={action.id}><button className="daily-action-picker-item" type="button" onClick={() => void assignRecurring(action.id)} disabled={saving}><RecurringActionPreview action={action} index={index + 1} /></button><div className="daily-recurring-order-actions"><Button type="text" size="small" aria-label="编辑重复行动" title="编辑" icon={<Pencil size={15} />} disabled={saving} onClick={(event) => { event.stopPropagation(); setEditingRecurringAction(action); setMode("edit-recurring"); }} /><Button type="text" size="small" aria-label="上移重复行动" title="上移" icon={<ChevronUp size={15} />} disabled={actualIndex === 0 || saving} onClick={(event) => { event.stopPropagation(); void moveRecurring(action.id, -1); }} /><Button type="text" size="small" aria-label="下移重复行动" title="下移" icon={<ChevronDown size={15} />} disabled={actualIndex === recurringActions.length - 1 || saving} onClick={(event) => { event.stopPropagation(); void moveRecurring(action.id, 1); }} /></div></div>; })}</div></>}
     {mode === "new" && <NewActionForm onSubmit={async (payload) => { try { const action = await actionsApi.create(payload); await assignAction(action); } catch (cause) { message.error(userFacingError(cause)); } }} />}
     {(mode === "new-recurring" || mode === "edit-recurring") && <NewRecurringActionForm action={editingRecurringAction} onSubmit={mode === "edit-recurring" ? updateRecurring : createRecurring} />}
-    <div className="form-footer">{mode !== "new-recurring" && mode !== "edit-recurring" && <Button onClick={onClose}>取消</Button>}{mode === "new" && <Button type="primary" form="daily-new-action-form" htmlType="submit" loading={saving}>创建并安排</Button>}{(mode === "new-recurring" || mode === "edit-recurring") && <>{(mode === "new-recurring" || mode === "edit-recurring") && <Button onClick={() => { setEditingRecurringAction(null); setMode("recurring"); }}>取消</Button>}<Button type="primary" form="daily-new-recurring-action-form" htmlType="submit" loading={saving}>{mode === "edit-recurring" ? "保存修改" : "保存重复行动"}</Button></>}</div>
+    <div className="form-footer">{mode !== "new-recurring" && mode !== "edit-recurring" && <Button onClick={onClose}>取消</Button>}{mode === "new" && <Button type="primary" form="daily-new-action-form" htmlType="submit" loading={saving}>创建并安排</Button>}{(mode === "new-recurring" || mode === "edit-recurring") && <>{mode === "edit-recurring" && <Popconfirm title="删除后不可恢复，确认删除吗" onConfirm={() => void deleteRecurring()} okText="删除" cancelText="取消"><Button danger loading={saving}>删除</Button></Popconfirm>}<Button onClick={() => { setEditingRecurringAction(null); setMode("recurring"); }}>取消</Button><Button type="primary" form="daily-new-recurring-action-form" htmlType="submit" loading={saving}>{mode === "edit-recurring" ? "保存修改" : "保存重复行动"}</Button></>}</div>
   </AntModal>;
 }
 function DailySlotModal({ slot, onClose, onSaved }: { slot: DailyScheduleSlot | null; onClose: () => void; onSaved: (slot: DailyScheduleSlot) => void }) {

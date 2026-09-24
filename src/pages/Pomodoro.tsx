@@ -76,6 +76,7 @@ const isTauriRuntime = () => typeof window !== "undefined" && Boolean((window as
 const WORK_SECONDS = 25 * 60;
 const REST_SECONDS = 5 * 60;
 const BLOCK_SECONDS = WORK_SECONDS + REST_SECONDS;
+const FLOATING_SIZE_SAVE_DELAY = 180;
 const durations = [1, 2, 3, 4, 5, 6].map((rounds) => ({
   value: rounds * BLOCK_SECONDS,
   label: `${rounds * 30}分钟(休息${rounds}次)`,
@@ -133,6 +134,9 @@ export default function Pomodoro() {
   const finishingRef = useRef(false);
   const floatingRef = useRef(false);
   const floatingSnapshotRef = useRef<WindowSnapshot | null>(null);
+  const floatingScaleFactorRef = useRef(1);
+  const pendingFloatingSizeRef = useRef<PhysicalSize | null>(null);
+  const floatingSizeSaveTimerRef = useRef<number | null>(null);
   const awardedBlocksRef = useRef({ recordId: 0, blocks: 0, awarding: false });
   const recordsPageSize = 10;
 
@@ -148,8 +152,30 @@ export default function Pomodoro() {
     setIsFloating(next);
   };
 
+  const flushFloatingSize = () => {
+    if (floatingSizeSaveTimerRef.current !== null) {
+      window.clearTimeout(floatingSizeSaveTimerRef.current);
+      floatingSizeSaveTimerRef.current = null;
+    }
+    const size = pendingFloatingSizeRef.current;
+    pendingFloatingSizeRef.current = null;
+    if (!size) return;
+    saveFloatingSize({
+      width: Math.round(size.width / floatingScaleFactorRef.current),
+      height: Math.round(size.height / floatingScaleFactorRef.current),
+    });
+  };
+
+  const scheduleFloatingSizeSave = (size: PhysicalSize) => {
+    pendingFloatingSizeRef.current = size;
+    if (floatingSizeSaveTimerRef.current !== null) window.clearTimeout(floatingSizeSaveTimerRef.current);
+    // 调整窗口时会高频触发事件，只在停下后写入最终尺寸，避免阻塞原生拖拽。
+    floatingSizeSaveTimerRef.current = window.setTimeout(flushFloatingSize, FLOATING_SIZE_SAVE_DELAY);
+  };
+
   const restoreNativeWindow = async (updateUi = true) => {
-    // 恢复常规窗口前先关闭悬浮状态，避免恢复过程的移动事件覆盖悬浮位置。
+    // 退出前写入最终尺寸；随后关闭悬浮状态，避免恢复过程的移动事件覆盖悬浮位置。
+    flushFloatingSize();
     floatingRef.current = false;
     saveFloatingMode(false);
     if (isTauriRuntime()) {
@@ -175,8 +201,9 @@ export default function Pomodoro() {
     saveFloatingMode(true);
     if (isTauriRuntime()) {
       const appWindow = getCurrentWindow();
-      const [size, position] = await Promise.all([appWindow.innerSize(), appWindow.outerPosition()]);
+      const [size, position, scaleFactor] = await Promise.all([appWindow.innerSize(), appWindow.outerPosition(), appWindow.scaleFactor()]);
       floatingSnapshotRef.current = { size, position };
+      floatingScaleFactorRef.current = scaleFactor;
       await appWindow.setMinSize(new LogicalSize(240, 240));
       await appWindow.setMaxSize(new LogicalSize(320, 320));
       await appWindow.setResizable(true);
@@ -198,15 +225,23 @@ export default function Pomodoro() {
     const appWindow = getCurrentWindow();
     let unlistenMove: (() => void) | undefined;
     let unlistenResize: (() => void) | undefined;
+    let unlistenScaleChanged: (() => void) | undefined;
     void appWindow.onMoved(({ payload }) => {
       if (floatingRef.current) saveFloatingPosition({ x: payload.x, y: payload.y });
     }).then((cleanup) => { unlistenMove = cleanup; });
-    void appWindow.onResized(async ({ payload }) => {
-      if (!floatingRef.current) return;
-      const scaleFactor = await appWindow.scaleFactor();
-      saveFloatingSize({ width: payload.width / scaleFactor, height: payload.height / scaleFactor });
+    void appWindow.onResized(({ payload }) => {
+      if (floatingRef.current) scheduleFloatingSizeSave(payload);
     }).then((cleanup) => { unlistenResize = cleanup; });
-    return () => { unlistenMove?.(); unlistenResize?.(); };
+    void appWindow.onScaleChanged(({ payload }) => {
+      floatingScaleFactorRef.current = payload.scaleFactor;
+      if (floatingRef.current) scheduleFloatingSizeSave(payload.size);
+    }).then((cleanup) => { unlistenScaleChanged = cleanup; });
+    return () => {
+      flushFloatingSize();
+      unlistenMove?.();
+      unlistenResize?.();
+      unlistenScaleChanged?.();
+    };
   }, []);
   const toggleFloatingMode = async () => {
     if (floatingBusy) return;
@@ -392,7 +427,7 @@ export default function Pomodoro() {
   const FloatingIcon = isFloating ? PanelTopOpen : PanelTopClose;
 
   return <div className="page pomodoro-page">
-    <header className="page-header pomodoro-page-header" data-tauri-drag-region={isFloating ? "true" : undefined}>
+    <header className="page-header pomodoro-page-header">
       <div>
         <Typography.Title level={2} className="page-title">番茄钟</Typography.Title>
         <Typography.Paragraph className="page-subtitle">用一段不被打扰的专注，换取可见的进步。</Typography.Paragraph>
@@ -415,8 +450,10 @@ export default function Pomodoro() {
         </div>
       </div>
       {isFloating && <div className="pomodoro-drag-handle" data-tauri-drag-region="true" onMouseDown={(event) => { if (event.button === 0) { event.preventDefault(); void getCurrentWindow().startDragging(); } }} role="button" tabIndex={-1} aria-label="拖动窗口"><span className="pomodoro-drag-dots"><i /><i /><i /><i /><i /><i /></span></div>}
-      {isFloating && (['North', 'South', 'East', 'West', 'NorthEast', 'NorthWest', 'SouthEast', 'SouthWest'] as const).map((direction) => <div key={direction} className={`pomodoro-resize-handle pomodoro-resize-${direction.toLowerCase()}`} onMouseDown={(event) => { if (event.button === 0) { event.preventDefault(); event.stopPropagation(); void getCurrentWindow().startResizeDragging(direction); } }} aria-hidden="true" />)}
     </header>
+    {isFloating && <div className="pomodoro-resize-layer" aria-hidden="true">
+      {(['North', 'South', 'East', 'West', 'NorthEast', 'NorthWest', 'SouthEast', 'SouthWest'] as const).map((direction) => <div key={direction} className={`pomodoro-resize-handle pomodoro-resize-${direction.toLowerCase()}`} onPointerDown={(event) => { if (event.isPrimary && event.button === 0) { event.preventDefault(); event.stopPropagation(); void getCurrentWindow().startResizeDragging(direction); } }} />)}
+    </div>}
     {error && <Alert className="page-alert" type="error" showIcon message={error} closable onClose={() => setError("")} />}
     {loading ? <div className="card empty">正在加载…</div> : <div className="pomodoro-grid">
       <Card className="pomodoro-card" bordered={false}>

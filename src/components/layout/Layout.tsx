@@ -76,6 +76,32 @@ export default function Layout() {
     let disposed = false;
     let unlistenResize: (() => void) | undefined;
     let unlistenMove: (() => void) | undefined;
+    let pendingSize: PhysicalSize | undefined;
+    let pendingPosition: PhysicalPosition | undefined;
+    let geometrySaveTimer: number | undefined;
+
+    const flushWindowGeometry = async () => {
+      geometrySaveTimer = undefined;
+      if (isFloatingModeSaved()) {
+        pendingSize = undefined;
+        pendingPosition = undefined;
+        return;
+      }
+      const size = pendingSize ?? await appWindow.innerSize();
+      const position = pendingPosition ?? await appWindow.outerPosition();
+      pendingSize = undefined;
+      pendingPosition = undefined;
+      if (!disposed && !isFloatingModeSaved()) {
+        saveWindowGeometry({ width: size.width, height: size.height, x: position.x, y: position.y });
+      }
+    };
+
+    const scheduleWindowGeometrySave = () => {
+      if (geometrySaveTimer !== undefined) window.clearTimeout(geometrySaveTimer);
+      // 原生窗口会连续派发移动和缩放事件，停止操作后再持久化，避免 IPC 队列阻塞拖拽。
+      geometrySaveTimer = window.setTimeout(() => { void flushWindowGeometry(); }, 180);
+    };
+
     const restore = async () => {
       try {
         const saved = loadWindowGeometry();
@@ -106,19 +132,24 @@ export default function Layout() {
         console.error("恢复窗口状态失败：", error);
       }
       if (disposed) return;
-      unlistenResize = await appWindow.onResized(async ({ payload }) => {
+      unlistenResize = await appWindow.onResized(({ payload }) => {
         if (isFloatingModeSaved()) return;
-        const position = await appWindow.outerPosition();
-        saveWindowGeometry({ width: payload.width, height: payload.height, x: position.x, y: position.y });
+        pendingSize = payload;
+        scheduleWindowGeometrySave();
       });
-      unlistenMove = await appWindow.onMoved(async ({ payload }) => {
+      unlistenMove = await appWindow.onMoved(({ payload }) => {
         if (isFloatingModeSaved()) return;
-        const size = await appWindow.innerSize();
-        saveWindowGeometry({ width: size.width, height: size.height, x: payload.x, y: payload.y });
+        pendingPosition = payload;
+        scheduleWindowGeometrySave();
       });
     };
     void restore();
-    return () => { disposed = true; unlistenResize?.(); unlistenMove?.(); };
+    return () => {
+      disposed = true;
+      if (geometrySaveTimer !== undefined) window.clearTimeout(geometrySaveTimer);
+      unlistenResize?.();
+      unlistenMove?.();
+    };
   }, []);
 
   const handleInstallUpdate = async () => {

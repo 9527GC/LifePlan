@@ -1,7 +1,7 @@
 {
   "name": "life-plan-todolist",
   "private": true,
-  "version": "1.0.11",
+  "version": "1.0.12",
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -55,6 +55,7 @@ export const recurringActionsApi = {
   list: () => invokeCommand<RecurringAction[]>("get_recurring_actions"),
   create: (payload: NewRecurringAction) => invokeCommand<RecurringAction>("create_recurring_action", { payload }),
   update: (payload: UpdateRecurringAction) => invokeCommand<RecurringAction>("update_recurring_action", { payload }),
+  delete: (recurringActionId: number) => invokeCommand<void>("delete_recurring_action", { recurringActionId }),
   reorder: (payload: ReorderRecurringActions) => invokeCommand<RecurringAction[]>("reorder_recurring_actions", { payload }),
   instantiate: (recurringActionId: number) => invokeCommand<Action>("create_action_from_recurring", { recurringActionId }),
 };

@@ -164,6 +164,26 @@ pub fn update_recurring_action(
         .ok_or_else(|| "更新重复行动后读取失败".into())
 }
 
+
+#[tauri::command]
+pub fn delete_recurring_action(
+    state: State<'_, AppState>,
+    recurring_action_id: i64,
+) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|error| error.to_string())?;
+    let space_id = current_space_id(&conn).map_err(|error| error.to_string())?;
+    let changed = conn
+        .execute(
+            "UPDATE recurring_actions SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2 AND space_id = ?3 AND deleted_at IS NULL",
+            params![now_millis(), recurring_action_id, space_id],
+        )
+        .map_err(|error| error.to_string())?;
+    if changed == 0 {
+        return Err("重复行动不存在".into());
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn reorder_recurring_actions(
     state: State<'_, AppState>,
