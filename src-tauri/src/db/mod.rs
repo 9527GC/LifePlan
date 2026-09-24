@@ -52,6 +52,17 @@ impl AppState {
         }
 
         let mut conn = Connection::open(&db_path)?;
+        let schema_version: i32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+        if existed
+            && schema_version > 0
+            && schema_version < migrations::CURRENT_SCHEMA_VERSION
+        {
+            backup::create_migration_backup(&db_path).map_err(|error| {
+                DbError::MigrationFailed(format!("创建迁移前备份失败，已取消升级以保护数据：{error}"))
+            })?;
+        }
         run_migrations(&mut conn)?;
         ensure_current_space(&mut conn)?;
 
@@ -205,9 +216,15 @@ fn migrate_remove_projects(conn: &mut Connection, add_event_columns: bool) -> Re
             tx.execute_batch(&event_column_migration)
                 .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
         }
-        // 已移除项目概念：不再保留仅归属于旧项目的行动。
+        // 项目被移除前，先将其行动关联到原项目所属事件；
+        // 临时行动与重复行动生成的实例没有 event_id / project_id，必须原样保留。
         tx.execute_batch(
-            "DELETE FROM actions WHERE event_id IS NULL;
+            "UPDATE actions
+             SET event_id = (
+                 SELECT p.event_id FROM projects p
+                 WHERE p.id = actions.project_id AND p.space_id = actions.space_id
+             )
+             WHERE event_id IS NULL AND project_id IS NOT NULL;
              CREATE TABLE actions_new (
                  id INTEGER PRIMARY KEY AUTOINCREMENT,
                  space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
@@ -464,4 +481,63 @@ where
         .lock()
         .map_err(|_| DbError::Other("database lock poisoned".into()))?;
     f(&conn).map_err(DbError::ConnectionFailed)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 移除项目迁移会保留临时行动和重复行动实例() {
+        let mut conn = Connection::open_in_memory().expect("创建内存数据库失败");
+        conn.execute_batch(migrations::INIT_MIGRATION)
+            .expect("初始化当前数据库结构失败");
+        conn.execute_batch(
+            "CREATE TABLE projects (
+                id INTEGER PRIMARY KEY,
+                space_id TEXT NOT NULL,
+                event_id INTEGER NOT NULL
+            );
+            ALTER TABLE actions ADD COLUMN project_id INTEGER;",
+        )
+        .expect("构造旧项目结构失败");
+
+        conn.execute(
+            "INSERT INTO local_spaces (space_id, created_at, updated_at) VALUES ('space-1', 1, 1)",
+            [],
+        )
+        .expect("创建空间失败");
+        conn.execute(
+            "INSERT INTO events (id, space_id, sync_id, title, created_at, updated_at)
+             VALUES (1, 'space-1', 'event-1', '测试事件', 1, 1)",
+            [],
+        )
+        .expect("创建事件失败");
+        conn.execute(
+            "INSERT INTO projects (id, space_id, event_id) VALUES (1, 'space-1', 1)",
+            [],
+        )
+        .expect("创建旧项目失败");
+        conn.execute(
+            "INSERT INTO actions (id, space_id, sync_id, event_id, project_id, title, created_at, updated_at)
+             VALUES (1, 'space-1', 'action-project', NULL, 1, '项目行动', 1, 1),
+                    (2, 'space-1', 'action-temporary', NULL, NULL, '临时行动', 1, 1),
+                    (3, 'space-1', 'action-recurring', NULL, NULL, '重复行动实例', 1, 1)",
+            [],
+        )
+        .expect("创建旧行动失败");
+
+        migrate_remove_projects(&mut conn, false).expect("执行项目迁移失败");
+
+        let relations: Vec<(i64, Option<i64>)> = conn
+            .prepare("SELECT id, event_id FROM actions ORDER BY id")
+            .expect("查询行动失败")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("映射行动失败")
+            .collect::<Result<_, _>>()
+            .expect("收集行动失败");
+        assert_eq!(relations, vec![(1, Some(1)), (2, None), (3, None)]);
+        assert!(!table_exists(&conn, "projects").expect("检查项目表失败"));
+    }
 }
