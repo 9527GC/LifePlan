@@ -51,8 +51,10 @@ fn validate(p: &NewAction) -> Result<(), String> {
     if !valid_hours(p.estimated_hours) {
         return Err("行动耗时必须为空、30 分钟、1 小时、1.5 小时或 2 小时".into());
     }
-    if p.start_date > p.deadline {
-        return Err("截止日期不能早于开始日期".into());
+    if let (Some(start_date), Some(deadline)) = (&p.start_date, &p.deadline) {
+        if start_date > deadline {
+            return Err("截止日期不能早于开始日期".into());
+        }
     }
     Ok(())
 }

@@ -196,6 +196,22 @@ pub fn initialize_daily_schedule(
     schedule(&conn, &list_date).map_err(|error| error.to_string())
 }
 #[tauri::command]
+pub fn get_daily_schedule_action_dates(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let conn = state.db.lock().map_err(|error| error.to_string())?;
+    let space_id = current_space_id(&conn).map_err(|error| error.to_string())?;
+    let mut statement = conn
+        .prepare(
+            "SELECT DISTINCT list_date FROM daily_schedule_slots WHERE space_id = ?1 AND action_id IS NOT NULL ORDER BY list_date",
+        )
+        .map_err(|error| error.to_string())?;
+    let dates = statement
+        .query_map([space_id], |row| row.get(0))
+        .map_err(|error| error.to_string())?
+        .collect::<rusqlite::Result<Vec<String>>>()
+        .map_err(|error| error.to_string())?;
+    Ok(dates)
+}
+#[tauri::command]
 pub fn create_daily_slot(
     state: State<'_, AppState>,
     payload: NewDailySlot,

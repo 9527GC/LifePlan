@@ -183,6 +183,7 @@ pub fn run() {
             daily_list::reorder_daily_list,
             daily_schedule::get_daily_schedule,
             daily_schedule::initialize_daily_schedule,
+            daily_schedule::get_daily_schedule_action_dates,
             daily_schedule::create_daily_slot,
             daily_schedule::update_daily_slot,
             daily_schedule::split_daily_slot,

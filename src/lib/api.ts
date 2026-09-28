@@ -61,6 +61,7 @@ export const dailyListApi = {
 export const dailyScheduleApi = {
   get: (listDate: string) => invokeCommand<DailySchedule>("get_daily_schedule", { listDate }),
   initialize: (listDate: string) => invokeCommand<DailySchedule>("initialize_daily_schedule", { listDate }),
+  actionDates: () => invokeCommand<string[]>("get_daily_schedule_action_dates"),
   createSlot: (payload: NewDailySlot) => invokeCommand<DailyScheduleSlot>("create_daily_slot", { payload }),
   updateSlot: (payload: UpdateDailySlot) => invokeCommand<DailyScheduleSlot>("update_daily_slot", { payload }),
   deleteSlot: (listDate: string, slotId: number) => invokeCommand<void>("delete_daily_slot", { listDate, slotId }),

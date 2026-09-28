@@ -201,6 +201,17 @@ export default function Inbox() {
       completed: 5,
     };
     const filtered = events.filter((event) => event.status === status[filter]);
+    if (filter === "delayed") {
+      return [...filtered].sort((left, right) => {
+        const leftDelayUntil = left.delay_until ?? "9999-12-31";
+        const rightDelayUntil = right.delay_until ?? "9999-12-31";
+        return (
+          leftDelayUntil.localeCompare(rightDelayUntil) ||
+          left.created_at - right.created_at ||
+          left.id - right.id
+        );
+      });
+    }
     if (filter !== "events") return filtered;
     // 进行中事件按 P1、P2、P3、P4 排列；优先级数值越小越靠前。
     return sortByPriority(
@@ -332,7 +343,7 @@ export default function Inbox() {
               事件篮
             </Typography.Title>
             <Typography.Paragraph className="page-subtitle">
-              先把脑中的事情放进来，再决定下一步怎么处理。
+              先把脑中的事情放进来，清空杂念专注手头事项，后续找时间再决定下一步行动。
             </Typography.Paragraph>
           </div>
           <Form className="quick-add" onFinish={() => void addEvent()}>
@@ -1210,9 +1221,6 @@ function EventActionModal({
             <Select options={hours} />
           </Form.Item>
           <Form.Item name="start_date" label="开始日期（选填）">
-            <DatePicker className="full-width" format="YYYY-MM-DD" />
-          </Form.Item>
-          <Form.Item name="deadline" label="截止日期">
             <DatePicker className="full-width" format="YYYY-MM-DD" />
           </Form.Item>
         </div>
