@@ -15,27 +15,29 @@ fn row_to_event(row: &rusqlite::Row) -> rusqlite::Result<Event> {
         follow_up_note: row.get(5)?,
         delay_until: row.get(6)?,
         delay_note: row.get(7)?,
-        abandon_reason: row.get(8)?,
-        target: row.get(9)?,
-        deadline: row.get(10)?,
-        importance: row.get(11)?,
-        urgency: row.get(12)?,
-        action_count: row.get(13)?,
-        pending_action_count: row.get(14)?,
-        completed_action_count: row.get(15)?,
-        is_quick_completed: row.get(16)?,
-        created_at: row.get(17)?,
-        updated_at: row.get(18)?,
+        delay_from_status: row.get(8)?,
+        abandon_reason: row.get(9)?,
+        target: row.get(10)?,
+        deadline: row.get(11)?,
+        importance: row.get(12)?,
+        urgency: row.get(13)?,
+        action_count: row.get(14)?,
+        pending_action_count: row.get(15)?,
+        completed_action_count: row.get(16)?,
+        is_quick_completed: row.get(17)?,
+        created_at: row.get(18)?,
+        updated_at: row.get(19)?,
     })
 }
 
-fn restore_due_delays(conn: &Connection) -> rusqlite::Result<()> {
+pub(crate) fn restore_due_delays(conn: &Connection) -> rusqlite::Result<()> {
     let space_id = current_space_id(conn).map_err(to_sql_error)?;
     conn.execute(
         "UPDATE events
-         SET status = 0, delay_until = NULL, updated_at = ?1
+         SET status = delay_from_status, delay_until = NULL, delay_note = NULL,
+             delay_from_status = 0, updated_at = ?1
          WHERE space_id = ?2 AND deleted_at IS NULL AND status = 3
-           AND delay_until IS NOT NULL AND date(delay_until) <= date('now')",
+           AND delay_until IS NOT NULL AND date(delay_until) <= date('now', 'localtime')",
         params![now_millis(), space_id],
     )?;
     Ok(())
@@ -125,8 +127,8 @@ pub fn list_events(conn: &Connection) -> rusqlite::Result<Vec<Event>> {
     let space_id = current_space_id(conn).map_err(to_sql_error)?;
     let mut statement = conn.prepare(
         "SELECT e.id, e.title, e.status, e.delegated_to, e.follow_up_date,
-                e.follow_up_note, e.delay_until, e.delay_note, e.abandon_reason,
-                e.target, e.deadline,
+                e.follow_up_note, e.delay_until, e.delay_note, e.delay_from_status,
+                e.abandon_reason, e.target, e.deadline,
                  e.importance, e.urgency, COUNT(a.id),
                 COALESCE(SUM(CASE WHEN a.status = 0 THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN a.status = 1 THEN 1 ELSE 0 END), 0),
@@ -246,7 +248,10 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
     let Some(status) = status else {
         return Err("事件不存在".into());
     };
-    if status != 0 && status != 3 {
+    if status == 1 && payload.decision != "delay" {
+        return Err("已开展行动事件暂不支持该操作".into());
+    }
+    if status != 0 && status != 1 && status != 3 {
         return Err("当前事件不能重复处理".into());
     }
 
@@ -336,6 +341,7 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
         "delay" => {
             tx.execute(
                 "UPDATE events SET status = 3, delay_until = ?1, delay_note = ?2,
+                 delay_from_status = CASE WHEN status = 3 THEN delay_from_status ELSE status END,
                  updated_at = ?3
                  WHERE id = ?4 AND space_id = ?5 AND deleted_at IS NULL",
                 params![
@@ -463,7 +469,7 @@ pub fn restore_event(state: State<'_, AppState>, event_id: i64) -> Result<(), St
     tx.execute(
         "UPDATE events SET status = 1,
          delegated_to = NULL, follow_up_date = NULL, follow_up_note = NULL,
-         delay_until = NULL, delay_note = NULL, abandon_reason = NULL,
+         delay_until = NULL, delay_note = NULL, delay_from_status = 0, abandon_reason = NULL,
          updated_at = ?1
          WHERE id = ?2 AND space_id = ?3 AND deleted_at IS NULL",
         params![timestamp, event_id, space_id],
@@ -477,6 +483,24 @@ pub fn restore_event(state: State<'_, AppState>, event_id: i64) -> Result<(), St
     )
     .map_err(|error| error.to_string())?;
     tx.commit().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn restore_delayed_event(state: State<'_, AppState>, event_id: i64) -> Result<(), String> {
+    let conn = state.db.lock().map_err(|error| error.to_string())?;
+    let space_id = current_space_id(&conn).map_err(|error| error.to_string())?;
+    let changed = conn
+        .execute(
+            "UPDATE events SET status = delay_from_status, delay_until = NULL, delay_note = NULL,
+         delay_from_status = 0, updated_at = ?1
+         WHERE id = ?2 AND space_id = ?3 AND deleted_at IS NULL AND status = 3",
+            params![now_millis(), event_id, space_id],
+        )
+        .map_err(|error| error.to_string())?;
+    if changed == 0 {
+        return Err("只有推迟事件可以恢复".into());
+    }
+    Ok(())
 }
 
 #[tauri::command]

@@ -16,6 +16,7 @@ pub struct Event {
     pub follow_up_note: Option<String>,
     pub delay_until: Option<String>,
     pub delay_note: Option<String>,
+    pub delay_from_status: i32,
     pub abandon_reason: Option<String>,
     pub target: Option<String>,
     pub deadline: Option<String>,
@@ -85,6 +86,7 @@ pub struct Action {
     pub event_id: Option<i64>,
     pub event_title: Option<String>,
     pub delegated_to: Option<String>,
+    pub event_status: Option<i32>,
     pub title: String,
     pub description: Option<String>,
     pub estimated_hours: f64,
@@ -211,6 +213,7 @@ pub struct DailyScheduleSlot {
     pub actual_notes: Option<String>,
     pub met_expectation: Option<i32>,
     pub focused: Option<i32>,
+    pub primary_review_reason: Option<String>,
     pub sort_order: i64,
 }
 
@@ -240,6 +243,7 @@ pub struct UpdateDailySlotReview {
     pub actual_notes: String,
     pub met_expectation: i32,
     pub focused: i32,
+    pub primary_review_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -344,4 +348,40 @@ pub struct RewardsOverview {
     pub total_points: i64,
     pub rewards: Vec<Reward>,
     pub exchanges: Vec<RewardExchange>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyReview {
+    pub review_date: String,
+    pub overall_status: Option<String>,
+    pub reflection_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DailyReviewDraft {
+    pub review_date: String,
+    pub overall_status: Option<String>,
+    pub reflection_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyReviewSummary {
+    pub planned_event_count: i64,
+    pub completed_event_count: i64,
+    pub incomplete_event_count: i64,
+    pub involved_event_count: i64,
+    pub quadrants_json: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyReviewView {
+    pub review: DailyReview,
+    pub summary: DailyReviewSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyReviewSuggestion {
+    pub reason: String,
+    pub occurrence_days: i64,
+    pub suggestion: String,
 }

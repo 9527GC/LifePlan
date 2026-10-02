@@ -15,6 +15,7 @@ export interface Event {
   follow_up_note?: string;
   delay_until?: string;
   delay_note?: string;
+  delay_from_status: 0 | 1;
   abandon_reason?: string;
   target?: string;
   deadline?: string;
@@ -33,6 +34,7 @@ export interface Action {
   event_id?: number | null;
   event_title?: string | null;
   delegated_to?: string;
+  event_status?: EventStatus;
   title: string;
   description?: string;
   estimated_hours: number;
@@ -148,12 +150,13 @@ export interface DailyScheduleSlot {
   actual_notes?: string;
   met_expectation?: 0 | 1;
   focused?: 0 | 1;
+  primary_review_reason?: import("@/lib/reviewReasons").ReviewReasonCode;
   sort_order: number;
 }
 export interface DailySchedule { list_date: string; slots: DailyScheduleSlot[] }
 export interface NewDailySlot { list_date: string; start_time: string; end_time: string }
 export interface UpdateDailySlot { id: number; start_time: string; end_time: string }
-export interface UpdateDailySlotReview { id: number; actual_notes: string; met_expectation: 0 | 1; focused: 0 | 1 }
+export interface UpdateDailySlotReview { id: number; actual_notes: string; met_expectation: 0 | 1; focused: 0 | 1; primary_review_reason?: import("@/lib/reviewReasons").ReviewReasonCode }
 export interface DailyTemplateSlot { start_time: string; end_time: string; sort_order: number }
 
 
@@ -178,3 +181,10 @@ export interface RewardExchange { id: number; reward_id: number; reward_name: st
 export interface RewardCheckinBrief { description?: string | null; created_at: number; updated_at: number }
 export interface RewardCheckin { exchange_id: number; reward_name: string; icon: string; points_used: number; exchanged_at: number; description?: string | null; image_base64?: string | null; created_at: number; updated_at: number }
 export interface RewardsOverview { total_points: number; rewards: Reward[]; exchanges: RewardExchange[] }
+
+
+export interface DailyReview { review_date: string; overall_status?: string; reflection_text?: string }
+export interface DailyReviewDraft { review_date: string; overall_status?: string; reflection_text?: string }
+export interface DailyReviewSummary { planned_event_count: number; completed_event_count: number; incomplete_event_count: number; involved_event_count: number; quadrants_json: string }
+export interface DailyReviewView { review: DailyReview; summary: DailyReviewSummary }
+export interface DailyReviewSuggestion { reason: string; occurrence_days: number; suggestion: string }

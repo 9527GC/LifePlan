@@ -1,4 +1,4 @@
-pub const CURRENT_SCHEMA_VERSION: i32 = 16;
+pub const CURRENT_SCHEMA_VERSION: i32 = 20;
 
 pub const INIT_MIGRATION: &str = r#"
 PRAGMA foreign_keys = OFF;
@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS events (
     follow_up_note TEXT,
     delay_until TEXT,
     delay_note TEXT,
+    delay_from_status INTEGER NOT NULL DEFAULT 0,
     abandon_reason TEXT,
     completion_points_awarded INTEGER NOT NULL DEFAULT 0,
     is_quick_completed INTEGER NOT NULL DEFAULT 0,
@@ -90,6 +91,7 @@ CREATE TABLE IF NOT EXISTS daily_schedule_slots (
     actual_notes TEXT,
     met_expectation INTEGER,
     focused INTEGER,
+    primary_review_reason TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
@@ -175,5 +177,18 @@ CREATE TABLE IF NOT EXISTS recurring_actions (
     updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_recurring_actions_space_order ON recurring_actions(space_id, deleted_at, sort_order, id);
+CREATE TABLE IF NOT EXISTS daily_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+    review_date TEXT NOT NULL,
+    overall_status TEXT,
+    deviation_reasons_json TEXT,
+    deviation_note TEXT,
+    reflection_text TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(space_id, review_date)
+);
+CREATE INDEX IF NOT EXISTS idx_daily_reviews_space_date ON daily_reviews(space_id, review_date);
 PRAGMA foreign_keys = ON;
 "#;

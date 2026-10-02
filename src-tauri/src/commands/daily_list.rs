@@ -11,6 +11,7 @@ fn row_to_action(row: &rusqlite::Row, offset: usize) -> rusqlite::Result<Action>
         event_id: row.get(offset + 1)?,
         event_title: row.get(offset + 2)?,
         delegated_to: row.get(offset + 3)?,
+        event_status: None,
         title: row.get(offset + 4)?,
         description: row.get(offset + 5)?,
         estimated_hours: row.get(offset + 6)?,

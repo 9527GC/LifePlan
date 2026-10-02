@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import dayjs, { type Dayjs } from "dayjs";
@@ -24,6 +25,7 @@ import {
   Steps,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from "antd";
@@ -36,6 +38,7 @@ import {
   Plus,
   RotateCcw,
   Trash2,
+  CircleHelp,
 } from "lucide-react";
 import { actionsApi, eventsApi } from "@/lib/api";
 import type {
@@ -72,6 +75,51 @@ const hours = [
   { value: 1.5, label: "1.5 小时" },
   { value: 2, label: "2 小时" },
 ];
+
+const DecisionHelp = ({ children }: { children: ReactNode }) => (
+  <Tooltip
+    color="#fff"
+    classNames={{ root: "decision-tooltip-popup" }}
+    styles={{
+      root: { width: "min(320px, calc(100vw - 32px))", maxWidth: "min(320px, calc(100vw - 32px))" },
+      container: {
+        width: "min(480px, calc(100vw - 32px))",
+        maxWidth: "min(480px, calc(100vw - 32px))",
+        padding: "12px 14px",
+        border: "0",
+        borderRadius: 6,
+        color: "#303133",
+        backgroundColor: "#fff",
+        boxShadow: "0 4px 12px rgba(0, 0, 0, .12)",
+      },
+    }}
+    title={<div className="frog-tooltip">{children}</div>}
+  >
+    <span className="frog-help" tabIndex={0} aria-label="判断提示">
+      <CircleHelp size={14} />
+    </span>
+  </Tooltip>
+);
+
+const decisionLabel = (label: string, help: ReactNode) => (
+  <span className="decision-label">{label} <DecisionHelp>{help}</DecisionHelp></span>
+);
+
+const importanceHelp = (
+  <>
+    <p><span className="decision-help-bullet">·</span>是否影响长期目标？</p>
+    <p><span className="decision-help-bullet">·</span>是否涉及核心责任？</p>
+    <p><span className="decision-help-bullet">·</span>是否会产生较大损失？</p>
+    <p><span className="decision-help-bullet">·</span>是否只有你能完成？</p>
+  </>
+);
+const urgencyHelp = (
+  <>
+    <p><span className="decision-help-bullet">·</span>距离完成时间是否足够？</p>
+    <p><span className="decision-help-bullet">·</span>是否阻塞当前重要事情？</p>
+  </>
+);
+
 const formatCreatedDate = (timestamp: number) => {
   const date = new Date(timestamp);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} 新增`;
@@ -80,27 +128,39 @@ const toDateString = (value: Dayjs | string | undefined) =>
   typeof value === "string" ? value : value?.format("YYYY-MM-DD");
 const formatDuration = (value: number) =>
   value === 0 ? "未设置预计耗时" : value === 0.5 ? "30分钟" : `${value}小时`;
-const compareActionDate = (left: Action, right: Action) => {
-  if (
-    left.start_date &&
-    right.start_date &&
-    left.start_date !== right.start_date
-  )
-    return left.start_date.localeCompare(right.start_date);
-  if (left.start_date && !right.start_date) return -1;
-  if (!left.start_date && right.start_date) return 1;
-  return left.created_at - right.created_at || left.id - right.id;
-};
-const sortEventActions = (actions: Action[]) =>
-  [...actions].sort((left, right) => {
+const formatCompletedDate = (timestamp: number) =>
+  `${dayjs(timestamp).format("YYYY-MM-DD")}完成`;
+const sortEventActions = (actions: Action[]) => {
+  const byStoredOrder = [...actions].sort((left, right) => {
     const leftOrder =
       (left.sort_order ?? 0) > 0 ? left.sort_order : Number.MAX_SAFE_INTEGER;
     const rightOrder =
       (right.sort_order ?? 0) > 0 ? right.sort_order : Number.MAX_SAFE_INTEGER;
     return leftOrder !== rightOrder
       ? leftOrder - rightOrder
-      : compareActionDate(left, right);
+      : left.created_at - right.created_at || left.id - right.id;
   });
+  const positionById = new Map(
+    byStoredOrder.map((action, index) => [action.id, index]),
+  );
+  const datedActions = byStoredOrder
+    .filter((action) => action.start_date)
+    .sort((left, right) => {
+      const dateCompare = left.start_date!.localeCompare(right.start_date!);
+      return dateCompare !== 0
+        ? dateCompare
+        : (positionById.get(left.id) ?? 0) -
+            (positionById.get(right.id) ?? 0);
+    });
+
+  let datedIndex = 0;
+  return byStoredOrder.map((action) => {
+    // 未设置开始日期的行动固定在其原有位置；仅让有日期的行动按日期填入其余位置。
+    // 因此清空日期不会把行动自动移到列表末尾，同日行动仍可按手动顺序排列。
+    if (!action.start_date) return action;
+    return datedActions[datedIndex++];
+  });
+};
 type ProcessMode = "self" | "delegate" | "delay" | "abandon";
 type InboxTab =
   "pending" | "events" | "delegated" | "delayed" | "abandoned" | "completed";
@@ -332,6 +392,15 @@ export default function Inbox() {
       setError(userFacingError(cause));
     }
   };
+  const restoreDelayed = async (item: Event) => {
+    try {
+      await eventsApi.restoreDelayed(item.id);
+      await load();
+      message.success(item.delay_from_status === 1 ? "事件已恢复进行中" : "事件已恢复");
+    } catch (cause) {
+      setError(userFacingError(cause));
+    }
+  };
 
   return (
     <div className="page">
@@ -446,6 +515,7 @@ export default function Inbox() {
               onProcess={(mode) => setProcessing({ event: item, mode })}
               onDelete={() => void remove(item)}
               onRestore={() => void restore(item)}
+              onRestoreDelayed={() => void restoreDelayed(item)}
               onComplete={() => void complete(item)}
               expanded={expandedEventIds.has(item.id)}
               onToggle={() => toggleEventExpanded(item.id)}
@@ -492,13 +562,13 @@ export default function Inbox() {
             {editing.status !== 5 && (
               <>
                 <Form.Item label="事件目标" name="target">
-                  <Input.TextArea autoSize={{ minRows: 3, maxRows: 5 }} />
+                  <Input.TextArea placeholder="你准备通过这件事获得什么结果？" autoSize={{ minRows: 3, maxRows: 5 }} />
                 </Form.Item>
                 <Form.Item label="截止日期" name="deadline">
                   <DatePicker className="full-width" format="YYYY-MM-DD" />
                 </Form.Item>
                 <div className="form-grid">
-                  <Form.Item name="importance" label="重要程度">
+                  <Form.Item name="importance" label={decisionLabel("重要程度", importanceHelp)}>
                     <Select
                       options={[
                         { value: 1, label: "重要" },
@@ -506,7 +576,7 @@ export default function Inbox() {
                       ]}
                     />
                   </Form.Item>
-                  <Form.Item name="urgency" label="紧急程度">
+                  <Form.Item name="urgency" label={decisionLabel("紧急程度", urgencyHelp)}>
                     <Select
                       options={[
                         { value: 1, label: "紧急" },
@@ -576,6 +646,7 @@ function EventRow({
   onProcess,
   onDelete,
   onRestore,
+  onRestoreDelayed,
   onComplete,
   expanded,
   onToggle,
@@ -591,6 +662,7 @@ function EventRow({
   onProcess: (mode: ProcessMode) => void;
   onDelete: () => void;
   onRestore: () => void;
+  onRestoreDelayed: () => void;
   onComplete: () => void;
   expanded: boolean;
   onToggle: () => void;
@@ -687,6 +759,14 @@ function EventRow({
                     )}
                   <Button
                     size="small"
+                    type="text"
+                    style={{ color: "#fa8c16" }}
+                    onClick={() => onProcess("delay")}
+                  >
+                    推迟
+                  </Button>
+                  <Button
+                    size="small"
                     danger
                     type="text"
                     onClick={() => onProcess("abandon")}
@@ -774,11 +854,20 @@ function EventRow({
                 <Button
                   size="small"
                   type="primary"
-                  onClick={() => onProcess("self")}
+                  onClick={() => item.status === 3 && item.delay_from_status === 1 ? onRestoreDelayed() : onProcess("self")}
                 >
                   去处理
                 </Button>
-                <Button size="small" onClick={() => onProcess("delegate")}>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    if (item.status === 3 && item.delay_from_status === 1) {
+                      message.warning("已开展行动事件暂不支持委托");
+                      return;
+                    }
+                    onProcess("delegate");
+                  }}
+                >
                   委托
                 </Button>
                 <Button size="small" onClick={() => onProcess("delay")}>
@@ -1065,6 +1154,11 @@ function EventActionList({
               <span className="action-duration-meta">
                 {formatDuration(action.estimated_hours)}
               </span>
+              {action.status === 1 && action.completed_at && (
+                <span className="action-completed-meta">
+                  {formatCompletedDate(action.completed_at)}
+                </span>
+              )}
               {action.deadline && (
                 <span className="action-detail-meta">
                   截止 {action.deadline}
@@ -1162,7 +1256,6 @@ function EventActionModal({
       data?.action
         ? {
             title: data.action.title,
-            description: data.action.description,
             estimated_hours: data.action.estimated_hours || undefined,
             start_date: data.action.start_date
               ? dayjs(data.action.start_date)
@@ -1177,11 +1270,17 @@ function EventActionModal({
   }, [data, form]);
   if (!data) return null;
   const submit = async (values: Record<string, unknown>) => {
+    const startDate = toDateString(values.start_date as Dayjs | string | undefined);
+    if (startDate && data.event.deadline && startDate > data.event.deadline) {
+      message.warning("不可晚于截止日期");
+      return;
+    }
     const payload = {
       title: values.title as string,
-      description: (values.description as string) || undefined,
+      // 描述不再在此弹框编辑，避免保存时清空已有的历史描述。
+      description: data.action?.description,
       estimated_hours: Number(values.estimated_hours || 0),
-      start_date: toDateString(values.start_date as Dayjs | string | undefined),
+      start_date: startDate,
       deadline: toDateString(values.deadline as Dayjs | string | undefined),
       is_frog: values.is_frog ? 1 : 0,
       importance: data.event.importance ?? 1,
@@ -1224,9 +1323,6 @@ function EventActionModal({
             <DatePicker className="full-width" format="YYYY-MM-DD" />
           </Form.Item>
         </div>
-        <Form.Item name="description" label="描述">
-          <Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} />
-        </Form.Item>
         <Form.Item name="is_frog" valuePropName="checked">
           <Checkbox>标记为青蛙</Checkbox>
         </Form.Item>
@@ -1358,6 +1454,14 @@ function ProcessModal({
       return;
     }
     if (mode === "self") {
+      const eventDeadline = toDateString(eventValues.deadline as Dayjs | string | undefined);
+      const invalidDateIndex = eventDeadline
+        ? steps.findIndex((item) => item.start_date && item.start_date > eventDeadline)
+        : -1;
+      if (invalidDateIndex >= 0) {
+        message.warning("不可晚于截止日期");
+        return;
+      }
       const invalidIndex = steps.findIndex((item) => !item.title?.trim());
       if (invalidIndex >= 0) {
         setValidationError({ index: invalidIndex, field: "title" });
@@ -1442,14 +1546,14 @@ function ProcessModal({
                   </Form.Item>
                   <Form.Item className="full" name="target" label="事件目标">
                     <Input.TextArea
-                      placeholder="选填"
+                      placeholder="你准备通过这件事获得什么结果？"
                       autoSize={{ minRows: 3, maxRows: 5 }}
                     />
                   </Form.Item>
                   <Form.Item className="full" name="deadline" label="截止日期">
                     <DatePicker className="full-width" format="YYYY-MM-DD" />
                   </Form.Item>
-                  <Form.Item name="importance" label="重要程度">
+                  <Form.Item name="importance" label={decisionLabel("重要程度", importanceHelp)}>
                     <Select
                       options={[
                         { value: "1", label: "重要" },
@@ -1457,7 +1561,7 @@ function ProcessModal({
                       ]}
                     />
                   </Form.Item>
-                  <Form.Item name="urgency" label="紧急程度">
+                  <Form.Item name="urgency" label={decisionLabel("紧急程度", urgencyHelp)}>
                     <Select
                       options={[
                         { value: "1", label: "紧急" },
@@ -1507,13 +1611,17 @@ function ProcessModal({
                             item.start_date ? dayjs(item.start_date) : null
                           }
                           format="YYYY-MM-DD"
-                          onChange={(value) =>
-                            updateStep(
-                              index,
-                              "start_date",
-                              value?.format("YYYY-MM-DD") ?? "",
-                            )
-                          }
+                          onChange={(value) => {
+                            const startDate = value?.format("YYYY-MM-DD") ?? "";
+                            const eventDeadline = toDateString(
+                              eventValues.deadline as Dayjs | string | undefined,
+                            );
+                            if (startDate && eventDeadline && startDate > eventDeadline) {
+                              message.warning("不可晚于截止日期");
+                              return;
+                            }
+                            updateStep(index, "start_date", startDate);
+                          }}
                         />
                         <Select
                           className="action-step-duration"

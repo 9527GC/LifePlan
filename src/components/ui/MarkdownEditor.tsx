@@ -12,11 +12,23 @@ type Props = {
   maxHeight?: number;
   // 由父组件传入的 ref，挂载后写入 editor.getHTML()，供“复制为富文本”使用
   getHtmlRef?: { current: () => string };
+  /** 是否展示基础格式工具栏。 */
+  showToolbar?: boolean;
+  className?: string;
 };
 
 // 所见即所得编辑器：不渲染任何工具条/菜单，格式化通过 Markdown 语法或快捷键（Ctrl/Cmd+B、Shift+Enter 换行）完成；对外读写始终是 Markdown 文本，兼容既有日志数据与 AI 链路。
 // breaks:true 让段落内的换行（含 Shift+Enter 硬换行）在解析时保留；层级缩进请用嵌套列表，编辑器会原样保留其缩进与换行。
-export default function MarkdownEditor({ value, onChange, placeholder, minHeight = 160, maxHeight, getHtmlRef }: Props) {
+export default function MarkdownEditor({
+  value,
+  onChange,
+  placeholder,
+  minHeight = 160,
+  maxHeight,
+  getHtmlRef,
+  showToolbar = false,
+  className,
+}: Props) {
   const latestRef = useRef(value);
   latestRef.current = value;
 
@@ -54,5 +66,81 @@ export default function MarkdownEditor({ value, onChange, placeholder, minHeight
     if (getHtmlRef) getHtmlRef.current = () => editor?.getHTML() ?? "";
   }, [editor, getHtmlRef]);
 
-  return <EditorContent editor={editor} />;
+  const keepSelection = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+  };
+
+  return (
+    <div className={`markdown-editor${showToolbar ? " has-toolbar" : ""}${className ? ` ${className}` : ""}`}>
+      {showToolbar && (
+        <div className="markdown-editor-toolbar" role="toolbar" aria-label="文本格式">
+          <button
+            type="button"
+            title="加粗"
+            aria-label="加粗"
+            aria-pressed={editor?.isActive("bold") || false}
+            onMouseDown={keepSelection}
+            onClick={() => editor?.chain().focus().toggleBold().run()}
+          ><strong>B</strong></button>
+          <button
+            type="button"
+            title="斜体"
+            aria-label="斜体"
+            aria-pressed={editor?.isActive("italic") || false}
+            onMouseDown={keepSelection}
+            onClick={() => editor?.chain().focus().toggleItalic().run()}
+          ><em>I</em></button>
+          <button
+            type="button"
+            title="小标题"
+            aria-label="小标题"
+            aria-pressed={editor?.isActive("heading", { level: 2 }) || false}
+            onMouseDown={keepSelection}
+            onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
+          >H</button>
+          <span className="markdown-editor-toolbar-divider" aria-hidden="true" />
+          <button
+            type="button"
+            title="无序列表"
+            aria-label="无序列表"
+            aria-pressed={editor?.isActive("bulletList") || false}
+            onMouseDown={keepSelection}
+            onClick={() => editor?.chain().focus().toggleBulletList().run()}
+          >• 列表</button>
+          <button
+            type="button"
+            title="有序列表"
+            aria-label="有序列表"
+            aria-pressed={editor?.isActive("orderedList") || false}
+            onMouseDown={keepSelection}
+            onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+          >1. 列表</button>
+          <button
+            type="button"
+            title="引用"
+            aria-label="引用"
+            aria-pressed={editor?.isActive("blockquote") || false}
+            onMouseDown={keepSelection}
+            onClick={() => editor?.chain().focus().toggleBlockquote().run()}
+          >引用</button>
+          <span className="markdown-editor-toolbar-spacer" />
+          <button
+            type="button"
+            title="撤销"
+            aria-label="撤销"
+            onMouseDown={keepSelection}
+            onClick={() => editor?.chain().focus().undo().run()}
+          >↶</button>
+          <button
+            type="button"
+            title="重做"
+            aria-label="重做"
+            onMouseDown={keepSelection}
+            onClick={() => editor?.chain().focus().redo().run()}
+          >↷</button>
+        </div>
+      )}
+      <EditorContent editor={editor} />
+    </div>
+  );
 }

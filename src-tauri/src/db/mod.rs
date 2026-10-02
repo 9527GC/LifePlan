@@ -55,12 +55,11 @@ impl AppState {
         let schema_version: i32 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
-        if existed
-            && schema_version > 0
-            && schema_version < migrations::CURRENT_SCHEMA_VERSION
-        {
+        if existed && schema_version > 0 && schema_version < migrations::CURRENT_SCHEMA_VERSION {
             backup::create_migration_backup(&db_path).map_err(|error| {
-                DbError::MigrationFailed(format!("创建迁移前备份失败，已取消升级以保护数据：{error}"))
+                DbError::MigrationFailed(format!(
+                    "创建迁移前备份失败，已取消升级以保护数据：{error}"
+                ))
             })?;
         }
         run_migrations(&mut conn)?;
@@ -145,6 +144,18 @@ pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
             .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
         return Ok(true);
     }
+    if version == 19 || version == 18 {
+        migrate_daily_review(conn)?;
+        return Ok(false);
+    }
+    if version == 17 {
+        migrate_daily_review(conn)?;
+        return Ok(false);
+    }
+    if version == 16 {
+        migrate_add_delay_source_status(conn)?;
+        return Ok(false);
+    }
     if version == 15 {
         migrate_add_quick_completion_marker(conn)?;
         return Ok(false);
@@ -164,6 +175,61 @@ pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
     Err(DbError::MigrationFailed(format!(
         "不支持从数据库版本 v{version} 升级；项目概念及其历史数据兼容已移除，请使用 v15 数据库或重新初始化。"
     )))
+}
+
+/// 确保每日复盘表和索引存在。
+///
+/// v13/v14 的项目迁移会直接写入当前版本号，因此这里必须保持幂等，
+/// 让跳级升级的旧库也能补齐 v19 新增的复盘数据结构。
+fn ensure_daily_review_schema(conn: &Connection) -> Result<(), DbError> {
+    // 仅保证当前草稿复盘所需字段存在；不删除旧版本已落库的数据，避免升级时破坏用户数据。
+    conn.execute_batch(r#"
+        CREATE TABLE IF NOT EXISTS daily_reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+            review_date TEXT NOT NULL,
+            overall_status TEXT,
+            deviation_reasons_json TEXT,
+            deviation_note TEXT,
+            reflection_text TEXT,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            UNIQUE(space_id, review_date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_daily_reviews_space_date ON daily_reviews(space_id, review_date);
+    "#)
+    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    Ok(())
+}
+
+fn ensure_daily_schedule_primary_review_reason_schema(conn: &Connection) -> Result<(), DbError> {
+    if !column_exists(conn, "daily_schedule_slots", "primary_review_reason")? {
+        conn.execute_batch(
+            "ALTER TABLE daily_schedule_slots ADD COLUMN primary_review_reason TEXT;",
+        )
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    }
+    Ok(())
+}
+
+fn migrate_daily_review(conn: &mut Connection) -> Result<(), DbError> {
+    ensure_daily_review_schema(conn)?;
+    ensure_daily_schedule_primary_review_reason_schema(conn)?;
+    conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    Ok(())
+}
+
+fn migrate_add_delay_source_status(conn: &mut Connection) -> Result<(), DbError> {
+    if !column_exists(conn, "events", "delay_from_status")? {
+        conn.execute_batch(
+            "ALTER TABLE events ADD COLUMN delay_from_status INTEGER NOT NULL DEFAULT 0;",
+        )
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    }
+    conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
+        .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    Ok(())
 }
 
 fn migrate_add_quick_completion_marker(conn: &mut Connection) -> Result<(), DbError> {
@@ -292,6 +358,8 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool, D
 }
 
 fn validate_current_schema(conn: &Connection) -> Result<(), DbError> {
+    ensure_daily_review_schema(conn)?;
+    ensure_daily_schedule_primary_review_reason_schema(conn)?;
     conn.execute_batch("CREATE TABLE IF NOT EXISTS daily_schedule_template_meta (space_id TEXT PRIMARY KEY REFERENCES local_spaces(space_id), updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS reward_checkins (id INTEGER PRIMARY KEY AUTOINCREMENT, space_id TEXT NOT NULL REFERENCES local_spaces(space_id), exchange_id INTEGER NOT NULL UNIQUE REFERENCES reward_exchanges(id) ON DELETE CASCADE, image_path TEXT, description TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS idx_reward_checkins_space ON reward_checkins(space_id);")
         .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
     if !column_exists(conn, "events", "is_quick_completed")? {
@@ -315,6 +383,16 @@ fn validate_current_schema(conn: &Connection) -> Result<(), DbError> {
     )
     .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
     for (table, columns) in [
+        (
+            "daily_reviews",
+            &[
+                "space_id",
+                "review_date",
+                "overall_status",
+                "deviation_reasons_json",
+                "reflection_text",
+            ][..],
+        ),
         (
             "local_spaces",
             &["space_id", "created_at", "updated_at"][..],
@@ -361,6 +439,7 @@ fn validate_current_schema(conn: &Connection) -> Result<(), DbError> {
                 "actual_notes",
                 "met_expectation",
                 "focused",
+                "primary_review_reason",
                 "sort_order",
             ][..],
         ),
@@ -483,7 +562,6 @@ where
     f(&conn).map_err(DbError::ConnectionFailed)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -539,5 +617,34 @@ mod tests {
             .expect("收集行动失败");
         assert_eq!(relations, vec![(1, Some(1)), (2, None), (3, None)]);
         assert!(!table_exists(&conn, "projects").expect("检查项目表失败"));
+    }
+
+    #[test]
+    fn v13升级会补齐每日复盘数据表() {
+        let mut conn = Connection::open_in_memory().expect("创建内存数据库失败");
+        conn.execute_batch(migrations::INIT_MIGRATION)
+            .expect("初始化当前数据库结构失败");
+        conn.execute_batch(
+            "PRAGMA foreign_keys = OFF;
+             DROP TABLE daily_reviews;
+             CREATE TABLE projects (
+                id INTEGER PRIMARY KEY,
+                space_id TEXT NOT NULL,
+                event_id INTEGER NOT NULL
+             );
+             ALTER TABLE actions ADD COLUMN project_id INTEGER;
+             PRAGMA user_version = 13;
+             PRAGMA foreign_keys = ON;",
+        )
+        .expect("构造 v13 数据库失败");
+
+        run_migrations(&mut conn).expect("执行 v13 升级失败");
+
+        let version: i32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("读取数据库版本失败");
+        assert_eq!(version, migrations::CURRENT_SCHEMA_VERSION);
+        assert!(table_exists(&conn, "daily_reviews").expect("检查每日复盘表失败"));
+        validate_current_schema(&conn).expect("验证升级后的数据库结构失败");
     }
 }

@@ -8,6 +8,7 @@ import {
   assertVersionConsistency,
   buildChangeSections,
   renderChangelogEntry,
+  readLatestChangelogEntry,
   upsertChangelog,
   findReleaseAssets,
   renderReleaseBody,
@@ -70,6 +71,40 @@ test("选择三种安装包和更新元数据", () => {
   assert.equal(assets.windows.name, "LifePlan_1.0.5_x64-setup.exe");
   assert.equal(assets.macosArm64.name, "LifePlan_1.0.5_aarch64.dmg");
   assert.equal(assets.macosX64.name, "LifePlan_1.0.5_x86_64.dmg");
+});
+
+test("读取 CHANGELOG 最新条目并保留原始 Markdown", () => {
+  const entry = readLatestChangelogEntry(`# 更新日志
+
+## v1.0.16（2026-09-28）
+
+### ✨ 功能调整
+- 日程支持行动标识。
+
+## v1.0.15（2026-09-24）
+
+- 旧内容
+`);
+  assert.equal(entry.tag, "v1.0.16");
+  assert.equal(entry.heading, "v1.0.16（2026-09-28）");
+  assert.equal(entry.markdown, "### ✨ 功能调整\n- 日程支持行动标识。");
+});
+
+test("Release 正文优先使用 CHANGELOG 最新内容", () => {
+  const body = renderReleaseBody({
+    tag: "v1.0.16",
+    sections: [{ title: "🔧 其他更新", items: ["不应使用提交归纳内容"] }],
+    releaseNotesMarkdown: "### ✨ 功能调整\n- 直接读取 CHANGELOG 的更新说明。",
+    repository: "9527GC/LifePlan",
+    defaultBranch: "main",
+    assets: {
+      windows: { name: "LifePlan_1.0.16_x64-setup.exe" },
+      macosArm64: { name: "LifePlan_1.0.16_aarch64.dmg" },
+      macosX64: { name: "LifePlan_1.0.16_x86_64.dmg" },
+    },
+  });
+  assert.match(body, /直接读取 CHANGELOG 的更新说明/);
+  assert.doesNotMatch(body, /不应使用提交归纳内容/);
 });
 
 test("Release 正文使用实际资产文件名和 CHANGELOG 链接", () => {

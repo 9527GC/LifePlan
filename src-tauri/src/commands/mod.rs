@@ -1,6 +1,7 @@
 pub mod actions;
 pub mod analytics;
 pub mod daily_list;
+pub mod daily_review;
 pub mod daily_schedule;
 pub mod events;
 pub mod pomodoro;

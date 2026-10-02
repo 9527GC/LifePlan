@@ -105,6 +105,24 @@ export function renderChangelogEntry(tag, date, sections) {
   return `## ${tag}（${date}）\n\n${renderChangeSections(sections)}\n`;
 }
 
+/**
+ * 读取 CHANGELOG 中最靠前的版本条目，保留原始 Markdown 内容。
+ * Release 正文直接使用该内容，避免从提交信息重新归纳后与维护的更新日志不一致。
+ */
+export function readLatestChangelogEntry(changelog) {
+  const normalized = String(changelog ?? "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+  const match = normalized.match(/^##\s+([^\n]+?)\s*\n([\s\S]*?)(?=^##\s+|(?![\s\S]))/mu);
+  if (!match) throw new Error("CHANGELOG.md 中未找到版本更新条目。");
+
+  const heading = match[1].trim();
+  const tagMatch = heading.match(/^(v\d+\.\d+\.\d+(?:\.\d+)?(?:-[0-9A-Za-z.-]+)?)(?:\s|（|\(|$)/u);
+  if (!tagMatch) throw new Error(`CHANGELOG.md 的最新条目标题格式无效：${heading}`);
+
+  const markdown = match[2].trim();
+  if (!markdown) throw new Error(`CHANGELOG.md 的最新条目 ${tagMatch[1]} 没有更新内容。`);
+  return { tag: tagMatch[1], heading, markdown };
+}
+
 export function upsertChangelog(changelog, tag, entry) {
   const normalized = changelog.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").trimEnd();
   if (new RegExp(`^## ${escapeRegExp(tag)}（`, "m").test(normalized)) return `${normalized}\n`;
@@ -130,14 +148,15 @@ export function findReleaseAssets(files) {
   };
 }
 
-export function renderReleaseBody({ tag, sections, repository, defaultBranch, assets }) {
+export function renderReleaseBody({ tag, sections, releaseNotesMarkdown, repository, defaultBranch, assets }) {
   const assetUrl = (name) => `https://github.com/${repository}/releases/download/${tag}/${encodeURIComponent(name)}`;
+  const releaseNotes = releaseNotesMarkdown?.trim() || renderChangeSections(sections ?? []);
   return [
     `# LifePlan ${tag}`,
     "",
     "## ✨ 本次更新",
     "",
-    renderChangeSections(sections),
+    releaseNotes,
     "",
     "## 📦 下载与安装",
     "",

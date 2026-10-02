@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Action, EventCompletionCheck, RewardCheckin, AddDailyListItem, DailyListItem, DailySchedule, DailyScheduleSlot, DailyTemplateSlot, Event, NewAction, NewEvent, NewDailySlot, NewRecurringAction, ProcessEvent, RecurringAction, ReorderDailyList, ReorderEventActions, ReorderRecurringActions, StartupNotice, UpdateAction, UpdateDailySlot, UpdateDailySlotReview, UpdateEvent, PomodoroRecord, PomodoroStatus, NewReward, Reward, RewardsOverview, UpdateReward, UpdateRecurringAction } from "@/types";
+import type { Action, EventCompletionCheck, RewardCheckin, AddDailyListItem, DailyListItem, DailySchedule, DailyScheduleSlot, DailyTemplateSlot, Event, NewAction, NewEvent, NewDailySlot, NewRecurringAction, ProcessEvent, RecurringAction, ReorderDailyList, ReorderEventActions, ReorderRecurringActions, StartupNotice, UpdateAction, UpdateDailySlot, UpdateDailySlotReview, UpdateEvent, PomodoroRecord, PomodoroStatus, NewReward, Reward, RewardsOverview, UpdateReward, UpdateRecurringAction, DailyReviewDraft, DailyReviewView, DailyReview, DailyReviewSuggestion } from "@/types";
 
 type TauriWindow = Window & {
   __TAURI_INTERNALS__?: {
@@ -28,6 +28,7 @@ export const eventsApi = {
   process: (payload: ProcessEvent) => invokeCommand<void>("process_event", { payload }),
   complete: (eventId: number) => invokeCommand<EventCompletionCheck>("complete_event", { eventId }),
   restore: (eventId: number) => invokeCommand<void>("restore_event", { eventId }),
+  restoreDelayed: (eventId: number) => invokeCommand<void>("restore_delayed_event", { eventId }),
   delete: (id: number) => invokeCommand<void>("delete_event", { id }),
 };
 
@@ -90,4 +91,11 @@ export const rewardsApi = {
   saveCheckin: (payload: { exchangeId: number; imageBase64?: string | null; description?: string | null }) => invokeCommand<void>("save_reward_checkin", { exchangeId: payload.exchangeId, imageBase64: payload.imageBase64 ?? null, description: payload.description ?? null }),
   getCheckin: (exchangeId: number) => invokeCommand<RewardCheckin>("get_reward_checkin", { exchangeId }),
   savePoster: (imageBase64: string) => invokeCommand<string>("save_reward_poster", { imageBase64 }),
+};
+
+
+export const dailyReviewApi = {
+  get: (reviewDate: string) => invokeCommand<DailyReviewView>("get_daily_review", { reviewDate }),
+  saveDraft: (payload: DailyReviewDraft) => invokeCommand<DailyReview>("save_daily_review_draft", { payload }),
+  suggestions: (planDate: string) => invokeCommand<DailyReviewSuggestion[]>("get_daily_review_suggestions", { planDate }),
 };

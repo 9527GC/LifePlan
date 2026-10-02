@@ -3,10 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
   assertVersionConsistency,
-  buildChangeSections,
-  renderChangeSections,
-  renderChangelogEntry,
-  upsertChangelog,
+  readLatestChangelogEntry,
 } from "./release-utils.mjs";
 
 function parseArguments(argv) {
@@ -89,25 +86,6 @@ function writeSummary(filePath, context, previousTag) {
   writeFileSync(filePath, content, "utf8", { flag: "a" });
 }
 
-function collectCommits(range) {
-  // %x1f 分隔标题与正文，%x1e 分隔不同提交，确保 commit body 里的细节不被丢弃
-  const rawLog = runGit(["log", "--format=%s%x1f%b%x1e", range]);
-  return rawLog
-    .split("\x1e")
-    .map((chunk) => chunk.trim())
-    .filter(Boolean)
-    .map((chunk) => {
-      const sep = chunk.indexOf("\x1f");
-      const subject = (sep >= 0 ? chunk.slice(0, sep) : chunk).trim();
-      const bodyText = sep >= 0 ? chunk.slice(sep + 1) : "";
-      const body = bodyText
-        .split(/\r?\n/)
-        .map((line) => line.replace(/^[-*]\s*/, "").trim())
-        .filter(Boolean);
-      return { subject, body };
-    });
-}
-
 function main() {
   const args = parseArguments(process.argv.slice(2));
   const tag = readRequiredArgument(args, "tag", process.env.GITHUB_REF_NAME);
@@ -127,27 +105,18 @@ function main() {
     .filter((candidate) => candidate && candidate !== tag);
   // 正式版优先以上一个“正式版”为基线，避免预发布标签（vX.Y.Z-N）截断更新内容
   const previousTag = tags.find((candidate) => !candidate.includes("-")) ?? tags[0];
-  const range = previousTag ? `${previousTag}..${tag}` : tag;
-  const commits = collectCommits(range);
-  const sections = buildChangeSections(commits);
-  const date = getShanghaiDate();
-  const releaseNotesMarkdown = renderChangeSections(sections);
-  const changelogEntry = renderChangelogEntry(tag, date, sections);
   const changelogFile = args.get("changelog-file") ?? "CHANGELOG.md";
-  let changelog = "";
-  try {
-    changelog = readFileSync(changelogFile, "utf8");
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
+  const latestChangelog = readLatestChangelogEntry(readFileSync(changelogFile, "utf8"));
+  if (latestChangelog.tag !== tag) {
+    throw new Error(`CHANGELOG.md 的最新条目为 ${latestChangelog.tag}，与发布标签 ${tag} 不一致。请先更新 CHANGELOG.md。`);
   }
-  writeUtf8File(changelogFile, upsertChangelog(changelog, tag, changelogEntry));
+  const date = getShanghaiDate();
 
   const context = {
     tag,
     version,
     date,
-    sections,
-    releaseNotesMarkdown,
+    releaseNotesMarkdown: latestChangelog.markdown,
     repository,
     defaultBranch,
   };

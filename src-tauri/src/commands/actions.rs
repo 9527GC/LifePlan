@@ -14,30 +14,32 @@ fn row_to_action(row: &rusqlite::Row) -> rusqlite::Result<Action> {
         event_id: row.get(1)?,
         event_title: row.get(2)?,
         delegated_to: row.get(3)?,
-        title: row.get(4)?,
-        description: row.get(5)?,
-        estimated_hours: row.get(6)?,
-        start_date: row.get(7)?,
-        deadline: row.get(8)?,
-        is_frog: row.get(9)?,
-        importance: row.get(10)?,
-        urgency: row.get(11)?,
-        priority: row.get(12)?,
-        status: row.get(13)?,
-        completed_at: row.get(14)?,
-        is_delegated_follow_up: row.get(15)?,
-        cascade_abandoned: row.get(16)?,
-        sort_order: row.get(17)?,
-        created_at: row.get(18)?,
-        updated_at: row.get(19)?,
+        event_status: row.get(4)?,
+        title: row.get(5)?,
+        description: row.get(6)?,
+        estimated_hours: row.get(7)?,
+        start_date: row.get(8)?,
+        deadline: row.get(9)?,
+        is_frog: row.get(10)?,
+        importance: row.get(11)?,
+        urgency: row.get(12)?,
+        priority: row.get(13)?,
+        status: row.get(14)?,
+        completed_at: row.get(15)?,
+        is_delegated_follow_up: row.get(16)?,
+        cascade_abandoned: row.get(17)?,
+        sort_order: row.get(18)?,
+        created_at: row.get(19)?,
+        updated_at: row.get(20)?,
     })
 }
 fn to_sql_error(e: crate::db::DbError) -> rusqlite::Error {
     rusqlite::Error::ToSqlConversionFailure(Box::new(e))
 }
 pub fn list_actions(conn: &Connection) -> rusqlite::Result<Vec<Action>> {
+    super::events::restore_due_delays(conn)?;
     let space = current_space_id(conn).map_err(to_sql_error)?;
-    let mut q=conn.prepare("SELECT a.id,a.event_id,e.title,e.delegated_to,a.title,a.description,a.estimated_hours,a.start_date,a.deadline,a.is_frog,a.importance,a.urgency,a.priority,a.status,a.completed_at,a.is_delegated_follow_up,a.cascade_abandoned,a.sort_order,a.created_at,a.updated_at FROM actions a LEFT JOIN events e ON e.id=a.event_id AND e.space_id=a.space_id AND e.deleted_at IS NULL WHERE a.space_id=?1 AND a.deleted_at IS NULL ORDER BY CASE WHEN a.event_id IS NULL THEN 1 ELSE 0 END,a.start_date IS NULL,a.start_date,a.sort_order,a.id")?;
+    let mut q=conn.prepare("SELECT a.id,a.event_id,e.title,e.delegated_to,e.status,a.title,a.description,a.estimated_hours,a.start_date,a.deadline,a.is_frog,a.importance,a.urgency,a.priority,a.status,a.completed_at,a.is_delegated_follow_up,a.cascade_abandoned,a.sort_order,a.created_at,a.updated_at FROM actions a LEFT JOIN events e ON e.id=a.event_id AND e.space_id=a.space_id AND e.deleted_at IS NULL WHERE a.space_id=?1 AND a.deleted_at IS NULL ORDER BY CASE WHEN a.event_id IS NULL THEN 1 ELSE 0 END,a.start_date IS NULL,a.start_date,a.sort_order,a.id")?;
     let result = q.query_map([space], row_to_action)?.collect();
     result
 }
@@ -114,6 +116,9 @@ pub fn update_action(state: State<'_, AppState>, payload: UpdateAction) -> Resul
     if event_status == Some(5) {
         return Err("已完成事件的行动不能编辑".into());
     }
+    if event_status == Some(3) {
+        return Err("推迟事件的行动不能编辑".into());
+    }
     let n = c.execute("UPDATE actions SET title=?1,description=?2,estimated_hours=?3,start_date=?4,deadline=?5,is_frog=?6,importance=?7,urgency=?8,priority=?9,updated_at=?10 WHERE id=?11 AND space_id=?12 AND deleted_at IS NULL", params![payload.title.trim(), payload.description, payload.estimated_hours, payload.start_date, payload.deadline, payload.is_frog, payload.importance, payload.urgency, calculate_priority(payload.importance, payload.urgency), now_millis(), payload.id, space]).map_err(|e| e.to_string())?;
     if n == 0 {
         return Err("行动不存在".into());
@@ -156,6 +161,9 @@ pub fn restore_action(state: State<'_, AppState>, id: i64) -> Result<Action, Str
     if event_status == Some(5) {
         return Err("已完成事件的行动不能恢复".into());
     }
+    if event_status == Some(3) {
+        return Err("推迟事件的行动不能恢复".into());
+    }
     let now = now_millis();
     tx.execute(
         "UPDATE actions SET status=0,completed_at=NULL,updated_at=?1 WHERE id=?2 AND space_id=?3",
@@ -183,6 +191,9 @@ pub fn delete_action(state: State<'_, AppState>, id: i64) -> Result<(), String> 
     };
     if event_status == Some(5) {
         return Err("已完成事件的行动不能删除".into());
+    }
+    if event_status == Some(3) {
+        return Err("推迟事件的行动不能删除".into());
     }
     let now = now_millis();
     tx.execute(

@@ -31,6 +31,7 @@ import Inbox from "@/pages/Inbox";
 import DailyList from "@/pages/DailyList";
 import Pomodoro from "@/pages/Pomodoro";
 import Rewards from "@/pages/Rewards";
+import DailyReviewDemo from "@/pages/DailyReviewDemo";
 import { systemApi } from "@/lib/api";
 import type { StartupNotice } from "@/types";
 import { track } from "@/lib/analytics";
@@ -89,6 +90,10 @@ export default function App() {
       Select: { controlHeight: 32 },
       DatePicker: { controlHeight: 32 },
       Modal: { borderRadiusLG: 8 },
+      Tooltip: {
+        colorBgSpotlight: "#fff",
+        colorTextLightSolid: "#303133",
+      },
     },
   }}>
     {notice && <Alert
@@ -102,9 +107,11 @@ export default function App() {
       action={notice.kind === "backup_warning" ? <Button size="small" loading={retrying} onClick={() => void retryBackup()}>立即重试</Button> : undefined}
     />}
     {showOnboarding && <OnboardingCarousel onFinish={() => setShowOnboarding(false)} />}
-    <HashRouter><Routes><Route path="/" element={<Layout />}><Route index element={<Navigate to="/daily-list" replace />} /><Route path="daily-list" element={<DailyList />} /><Route path="pomodoro" element={<Pomodoro />} /><Route path="rewards" element={<Rewards />} /><Route path="inbox" element={<Inbox />} /></Route></Routes></HashRouter>
+    <HashRouter><Routes><Route path="/" element={<Layout />}><Route index element={<Navigate to="/daily-list" replace />} /><Route path="daily-list" element={<DailyList />} /><Route path="pomodoro" element={<Pomodoro />} /><Route path="rewards" element={<Rewards />} /><Route path="daily-review" element={<DailyReviewDemo />} /><Route path="inbox" element={<Inbox />} /></Route></Routes></HashRouter>
   </ConfigProvider>;
 }
+
+
 
 
 

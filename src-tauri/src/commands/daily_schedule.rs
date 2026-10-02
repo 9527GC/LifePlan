@@ -62,6 +62,7 @@ fn row_to_action(row: &rusqlite::Row<'_>, offset: usize) -> rusqlite::Result<Act
         event_id: row.get(offset + 1)?,
         event_title: row.get(offset + 2)?,
         delegated_to: row.get(offset + 3)?,
+        event_status: None,
         title: row.get(offset + 4)?,
         description: row.get(offset + 5)?,
         estimated_hours: row.get(offset + 6)?,
@@ -83,7 +84,7 @@ fn row_to_action(row: &rusqlite::Row<'_>, offset: usize) -> rusqlite::Result<Act
 
 fn slot_query(conn: &Connection, list_date: &str) -> rusqlite::Result<Vec<DailyScheduleSlot>> {
     let space_id = current_space_id(conn).map_err(db_error)?;
-    let mut statement = conn.prepare("SELECT s.id, s.list_date, s.start_time, s.end_time, s.action_id, s.actual_notes, s.met_expectation, s.focused, s.sort_order, a.id, a.event_id, e.title, e.delegated_to, a.title, a.description, a.estimated_hours, a.start_date, a.deadline, a.is_frog, a.importance, a.urgency, a.priority, a.status, a.completed_at, a.is_delegated_follow_up, a.cascade_abandoned, COALESCE(a.sort_order, 0), a.created_at, a.updated_at FROM daily_schedule_slots s LEFT JOIN actions a ON a.id = s.action_id AND a.space_id = s.space_id AND a.deleted_at IS NULL LEFT JOIN events e ON e.id = a.event_id AND e.space_id = a.space_id AND e.deleted_at IS NULL WHERE s.space_id = ?1 AND s.list_date = ?2 ORDER BY s.start_time, s.id")?;
+    let mut statement = conn.prepare("SELECT s.id, s.list_date, s.start_time, s.end_time, s.action_id, s.actual_notes, s.met_expectation, s.focused, s.primary_review_reason, s.sort_order, a.id, a.event_id, e.title, e.delegated_to, a.title, a.description, a.estimated_hours, a.start_date, a.deadline, a.is_frog, a.importance, a.urgency, a.priority, a.status, a.completed_at, a.is_delegated_follow_up, a.cascade_abandoned, COALESCE(a.sort_order, 0), a.created_at, a.updated_at FROM daily_schedule_slots s LEFT JOIN actions a ON a.id = s.action_id AND a.space_id = s.space_id AND a.deleted_at IS NULL LEFT JOIN events e ON e.id = a.event_id AND e.space_id = a.space_id AND e.deleted_at IS NULL WHERE s.space_id = ?1 AND s.list_date = ?2 ORDER BY s.start_time, s.id")?;
     let result = statement
         .query_map(params![space_id, list_date], |row| {
             Ok(DailyScheduleSlot {
@@ -95,9 +96,10 @@ fn slot_query(conn: &Connection, list_date: &str) -> rusqlite::Result<Vec<DailyS
                 actual_notes: row.get(5)?,
                 met_expectation: row.get(6)?,
                 focused: row.get(7)?,
-                sort_order: row.get(8)?,
-                action: if row.get::<_, Option<i64>>(9)?.is_some() {
-                    Some(row_to_action(row, 9)?)
+                primary_review_reason: row.get(8)?,
+                sort_order: row.get(9)?,
+                action: if row.get::<_, Option<i64>>(10)?.is_some() {
+                    Some(row_to_action(row, 10)?)
                 } else {
                     None
                 },
@@ -401,6 +403,29 @@ pub fn update_daily_slot_review(
     if ![0, 1].contains(&payload.met_expectation) || ![0, 1].contains(&payload.focused) {
         return Err("复盘选项无效".into());
     }
+    const REVIEW_REASONS: [&str; 7] = [
+        "plan",
+        "priority",
+        "interrupt",
+        "dependency",
+        "clarity",
+        "energy",
+        "other",
+    ];
+    let has_deviation = payload.met_expectation == 0 || payload.focused == 0;
+    if has_deviation && payload.primary_review_reason.is_none() {
+        return Err("请选择偏差主因".into());
+    }
+    if !has_deviation && payload.primary_review_reason.is_some() {
+        return Err("达预期且专注时无需选择偏差主因".into());
+    }
+    if payload
+        .primary_review_reason
+        .as_deref()
+        .is_some_and(|reason| !REVIEW_REASONS.contains(&reason))
+    {
+        return Err("偏差主因无效".into());
+    }
     let conn = state.db.lock().map_err(|error| error.to_string())?;
     let space_id = current_space_id(&conn).map_err(|error| error.to_string())?;
     let list_date: String = conn
@@ -410,7 +435,7 @@ pub fn update_daily_slot_review(
             |row| row.get(0),
         )
         .map_err(|error| error.to_string())?;
-    let changed = conn.execute("UPDATE daily_schedule_slots SET actual_notes = ?1, met_expectation = ?2, focused = ?3, updated_at = ?4 WHERE id = ?5 AND space_id = ?6", params![payload.actual_notes.trim(), payload.met_expectation, payload.focused, now_millis(), payload.id, space_id]).map_err(|error| error.to_string())?;
+    let changed = conn.execute("UPDATE daily_schedule_slots SET actual_notes = ?1, met_expectation = ?2, focused = ?3, primary_review_reason = ?4, updated_at = ?5 WHERE id = ?6 AND space_id = ?7", params![payload.actual_notes.trim(), payload.met_expectation, payload.focused, payload.primary_review_reason, now_millis(), payload.id, space_id]).map_err(|error| error.to_string())?;
     if changed == 0 {
         return Err("时间段不存在".into());
     }
