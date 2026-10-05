@@ -68,7 +68,7 @@ jobs:
           - platform: Windows x64
             runner: windows-latest
             rust_target: x86_64-pc-windows-msvc
-            args: ""
+            args: "--bundles nsis"
             artifact_name: release-windows-x64
           - platform: macOS Apple Silicon
             runner: macos-14
