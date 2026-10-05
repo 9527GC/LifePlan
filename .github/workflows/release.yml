@@ -102,6 +102,8 @@ jobs:
 
       - name: 构建 Tauri 产物
         env:
+          # 仅正式发布构建可访问既有生产数据目录；所有未显式标记的本地构建均隔离到 -dev。
+          LIFEPLAN_ENV: production
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri -- build ${{ matrix.args }}

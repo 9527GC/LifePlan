@@ -83,10 +83,10 @@ pub fn init_db() -> Result<AppState, DbError> {
     AppState::new(path)
 }
 
-/// 解析当前渠道的应用数据根目录。
-/// 生产构建保持既有目录名 `LifePlanTodolist`（不影响老用户）；
-/// 通过 `LIFEPLAN_ENV`（运行时优先，其次编译期 `LIFEPLAN_BUILD_ENV`）区分内测/预发渠道，
-/// 本地 debug 构建自动落到 `-dev` 目录，避免非生产构建迁移正式数据库导致旧版本打不开。
+/// 解析当前构建渠道的应用数据根目录。
+/// 只有发布流水线在编译时显式注入 `LIFEPLAN_ENV=production` 时才使用生产目录
+/// `LifePlanTodolist`；其他本地构建（包含 `tauri build` 的 release 构建）一律使用
+/// `LifePlanTodolist-dev`，避免测试数据写入正式数据库。
 pub fn app_data_dir() -> Result<PathBuf, DbError> {
     let base = dirs::data_dir()
         .ok_or_else(|| DbError::PathFailed("unable to resolve system data directory".into()))?;
@@ -94,28 +94,18 @@ pub fn app_data_dir() -> Result<PathBuf, DbError> {
 }
 
 fn channel_data_folder() -> String {
-    match channel_suffix().as_deref() {
-        Some(suffix) => format!("LifePlanTodolist-{suffix}"),
-        None => "LifePlanTodolist".to_string(),
-    }
+    channel_data_folder_for(option_env!("LIFEPLAN_BUILD_ENV"))
 }
 
-fn channel_suffix() -> Option<String> {
-    let raw = std::env::var("LIFEPLAN_ENV")
-        .ok()
-        .or_else(|| option_env!("LIFEPLAN_BUILD_ENV").map(|value| value.to_string()))
+fn channel_data_folder_for(build_env: Option<&str>) -> String {
+    match build_env
         .map(|value| value.trim().to_ascii_lowercase())
-        .filter(|value| !value.is_empty() && value != "production" && value != "prod");
-    if raw.is_some() {
-        return raw;
-    }
-    #[cfg(debug_assertions)]
+        .filter(|value| !value.is_empty())
+        .as_deref()
     {
-        return Some("dev".to_string());
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        None
+        Some("production") | Some("prod") => "LifePlanTodolist".to_string(),
+        Some(channel) => format!("LifePlanTodolist-{channel}"),
+        None => "LifePlanTodolist-dev".to_string(),
     }
 }
 
@@ -565,6 +555,25 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn 仅显式生产构建使用生产数据目录() {
+        assert_eq!(
+            channel_data_folder_for(Some("production")),
+            "LifePlanTodolist"
+        );
+        assert_eq!(channel_data_folder_for(Some(" PROD ")), "LifePlanTodolist");
+    }
+
+    #[test]
+    fn 本地与测试构建使用隔离数据目录() {
+        assert_eq!(channel_data_folder_for(None), "LifePlanTodolist-dev");
+        assert_eq!(channel_data_folder_for(Some("")), "LifePlanTodolist-dev");
+        assert_eq!(
+            channel_data_folder_for(Some("qa-smoke")),
+            "LifePlanTodolist-qa-smoke"
+        );
+    }
 
     #[test]
     fn 移除项目迁移会保留临时行动和重复行动实例() {
