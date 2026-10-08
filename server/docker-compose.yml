@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: docker.m.daocloud.io/library/postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: lifeplan
@@ -29,3 +29,4 @@ services:
 
 volumes:
   postgres_data:
+
