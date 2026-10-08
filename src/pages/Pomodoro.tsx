@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Alert, Button, Card, Empty, Form, Input, Modal, Pagination, Select, Space, Tag, Tooltip, Typography, message } from "antd";
-import { getCurrentWindow, LogicalSize, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
-import { Gift, PanelTopClose, PanelTopOpen, Play, TimerReset } from "lucide-react";
+import { Gift, PanelTopClose, Play, TimerReset } from "lucide-react";
 import { actionsApi, dailyScheduleApi, pomodoroApi } from "@/lib/api";
 import type { Action, PomodoroRecord, PomodoroStatus } from "@/types";
 import { userFacingError } from "@/lib/errors";
 import { track } from "@/lib/analytics";
-import { loadFloatingPosition, loadFloatingSize, saveFloatingMode, saveFloatingPosition, saveFloatingSize } from "@/lib/windowPreferences";
+import { openPomodoroFloatingWindow, setFloatingPomodoroMode, showMainWindow } from "@/lib/pomodoroWindow";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listenPomodoroChanged, notifyPomodoroChanged } from "@/lib/pomodoroSync";
+import { clearPomodoroCompletion, consumePomodoroReviewRequest, getPomodoroCompletion, getPomodoroWindowMode, savePomodoroCompletion, setPomodoroWindowMode } from "@/lib/pomodoroSession";
 
 type PomodoroPhase = "work" | "rest";
-type WindowSnapshot = { size: PhysicalSize; position: PhysicalPosition };
-type TauriRuntimeWindow = Window & { __TAURI_INTERNALS__?: unknown };
 type AudioRuntimeWindow = Window & { webkitAudioContext?: typeof AudioContext };
 
 let completionAudioContext: AudioContext | null = null;
@@ -72,11 +72,9 @@ const playCompletionSound = () => {
     play();
   }
 };
-const isTauriRuntime = () => typeof window !== "undefined" && Boolean((window as TauriRuntimeWindow).__TAURI_INTERNALS__);
 const WORK_SECONDS = 25 * 60;
 const REST_SECONDS = 5 * 60;
 const BLOCK_SECONDS = WORK_SECONDS + REST_SECONDS;
-const FLOATING_SIZE_SAVE_DELAY = 180;
 const durations = [1, 2, 3, 4, 5, 6].map((rounds) => ({
   value: rounds * BLOCK_SECONDS,
   label: `${rounds * 30}分钟(休息${rounds}次)`,
@@ -86,6 +84,24 @@ const formatSeconds = (seconds: number) => `${String(Math.floor(seconds / 60)).p
 const durationLabel = (seconds: number) => durations.find((item) => item.value === seconds)?.label ?? `${Math.round(seconds / 60)}分钟`;
 const statusText = (status: number) => status === 1 ? "已完成" : status === 0 ? "已放弃" : status === 2 ? "已中断" : "进行中";
 const localDate = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; };
+const getStoredCompletionResult = () => {
+  const completion = getPomodoroCompletion();
+  return completion ? { points: completion.points, actionId: completion.actionId } : null;
+};
+
+const withPomodoroRequestTimeout = async <T,>(request: Promise<T>, action: string): Promise<T> => {
+  let timer: number | undefined;
+  try {
+    return await Promise.race([
+      request,
+      new Promise<T>((_, reject) => {
+        timer = window.setTimeout(() => reject(new Error(`${action}超时，请重试`)), 8000);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) window.clearTimeout(timer);
+  }
+};
 
 const getPhaseInfo = (plannedSeconds: number, elapsedSeconds: number) => {
   const elapsed = Math.max(0, Math.min(plannedSeconds, elapsedSeconds));
@@ -124,19 +140,16 @@ export default function Pomodoro() {
   const [error, setError] = useState("");
   const [interruptOpen, setInterruptOpen] = useState(false);
   const [interrupting, setInterrupting] = useState(false);
-  const [completionResult, setCompletionResult] = useState<{ points: number; actionId?: number } | null>(null);
-  const [isFloating, setIsFloating] = useState(false);
-  const [floatingBusy, setFloatingBusy] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [completionResult, setCompletionResult] = useState<{ points: number; actionId?: number } | null>(getStoredCompletionResult);
   const [reviewNavigating, setReviewNavigating] = useState(false);
-  const [form] = Form.useForm();
+  const [windowMode, setWindowMode] = useState(getPomodoroWindowMode);
   const [recordsPage, setRecordsPage] = useState(1);
+  const [form] = Form.useForm();
   const navigate = useNavigate();
   const finishingRef = useRef(false);
-  const floatingRef = useRef(false);
-  const floatingSnapshotRef = useRef<WindowSnapshot | null>(null);
-  const floatingScaleFactorRef = useRef(1);
-  const pendingFloatingSizeRef = useRef<PhysicalSize | null>(null);
-  const floatingSizeSaveTimerRef = useRef<number | null>(null);
+  const floatingSwitchingRef = useRef(false);
+  const loadRevisionRef = useRef(0);
   const awardedBlocksRef = useRef({ recordId: 0, blocks: 0, awarding: false });
   const recordsPageSize = 10;
 
@@ -147,147 +160,50 @@ export default function Pomodoro() {
   const historyRecords = records.filter((item) => item.status !== 0);
   const visibleRecords = historyRecords.slice((recordsPage - 1) * recordsPageSize, recordsPage * recordsPageSize);
 
-  const setFloatingUi = (next: boolean) => {
-    floatingRef.current = next;
-    setIsFloating(next);
-  };
-
-  const flushFloatingSize = () => {
-    if (floatingSizeSaveTimerRef.current !== null) {
-      window.clearTimeout(floatingSizeSaveTimerRef.current);
-      floatingSizeSaveTimerRef.current = null;
-    }
-    const size = pendingFloatingSizeRef.current;
-    pendingFloatingSizeRef.current = null;
-    if (!size) return;
-    saveFloatingSize({
-      width: Math.round(size.width / floatingScaleFactorRef.current),
-      height: Math.round(size.height / floatingScaleFactorRef.current),
-    });
-  };
-
-  const scheduleFloatingSizeSave = (size: PhysicalSize) => {
-    pendingFloatingSizeRef.current = size;
-    if (floatingSizeSaveTimerRef.current !== null) window.clearTimeout(floatingSizeSaveTimerRef.current);
-    // 调整窗口时会高频触发事件，只在停下后写入最终尺寸，避免阻塞原生拖拽。
-    floatingSizeSaveTimerRef.current = window.setTimeout(flushFloatingSize, FLOATING_SIZE_SAVE_DELAY);
-  };
-
-  const restoreNativeWindow = async (updateUi = true) => {
-    // 退出前写入最终尺寸；随后关闭悬浮状态，避免恢复过程的移动事件覆盖悬浮位置。
-    flushFloatingSize();
-    floatingRef.current = false;
-    saveFloatingMode(false);
-    if (isTauriRuntime()) {
-      const appWindow = getCurrentWindow();
-      const snapshot = floatingSnapshotRef.current;
-      await appWindow.setAlwaysOnTop(false);
-      await appWindow.setMaxSize(null);
-      await appWindow.setMinSize(new LogicalSize(1050, 650));
-      // 窗口始终使用自研标题栏，退出悬浮模式时不能恢复系统标题栏。
-      await appWindow.setDecorations(false);
-      await appWindow.setResizable(true);
-      if (snapshot) {
-        await appWindow.setSize(new PhysicalSize(snapshot.size.width, snapshot.size.height));
-        await appWindow.setPosition(new PhysicalPosition(snapshot.position.x, snapshot.position.y));
-      }
-      await appWindow.setFocus();
-    }
-    floatingSnapshotRef.current = null;
-    if (updateUi) setFloatingUi(false);
-  };
-
-  const enterFloatingMode = async () => {
-    saveFloatingMode(true);
-    if (isTauriRuntime()) {
-      const appWindow = getCurrentWindow();
-      const [size, position, scaleFactor] = await Promise.all([appWindow.innerSize(), appWindow.outerPosition(), appWindow.scaleFactor()]);
-      floatingSnapshotRef.current = { size, position };
-      floatingScaleFactorRef.current = scaleFactor;
-      await appWindow.setMinSize(new LogicalSize(240, 240));
-      await appWindow.setMaxSize(new LogicalSize(320, 320));
-      await appWindow.setResizable(true);
-      await appWindow.setDecorations(false);
-      const savedSize = loadFloatingSize();
-      const width = savedSize ? Math.max(240, Math.min(320, savedSize.width)) : 320;
-      const height = savedSize ? Math.max(240, Math.min(320, savedSize.height)) : 320;
-      await appWindow.setSize(new LogicalSize(width, height));
-      const savedPosition = loadFloatingPosition();
-      if (savedPosition) await appWindow.setPosition(new PhysicalPosition(savedPosition.x, savedPosition.y));
-      await appWindow.setAlwaysOnTop(true);
-      await appWindow.setFocus();
-    }
-    setFloatingUi(true);
-  };
-
-  useEffect(() => {
-    if (!isTauriRuntime()) return;
-    const appWindow = getCurrentWindow();
-    let unlistenMove: (() => void) | undefined;
-    let unlistenResize: (() => void) | undefined;
-    let unlistenScaleChanged: (() => void) | undefined;
-    void appWindow.onMoved(({ payload }) => {
-      if (floatingRef.current) saveFloatingPosition({ x: payload.x, y: payload.y });
-    }).then((cleanup) => { unlistenMove = cleanup; });
-    void appWindow.onResized(({ payload }) => {
-      if (floatingRef.current) scheduleFloatingSizeSave(payload);
-    }).then((cleanup) => { unlistenResize = cleanup; });
-    void appWindow.onScaleChanged(({ payload }) => {
-      floatingScaleFactorRef.current = payload.scaleFactor;
-      if (floatingRef.current) scheduleFloatingSizeSave(payload.size);
-    }).then((cleanup) => { unlistenScaleChanged = cleanup; });
-    return () => {
-      flushFloatingSize();
-      unlistenMove?.();
-      unlistenResize?.();
-      unlistenScaleChanged?.();
-    };
-  }, []);
-  const toggleFloatingMode = async () => {
-    if (floatingBusy) return;
-    setFloatingBusy(true);
-    try {
-      if (floatingRef.current) {
-        await restoreNativeWindow();
-      } else {
-        await enterFloatingMode();
-      }
-    } catch (cause) {
-      if (!floatingRef.current && floatingSnapshotRef.current) {
-        await restoreNativeWindow(false).catch(() => undefined);
-      }
-      setError(userFacingError(cause));
-    } finally {
-      setFloatingBusy(false);
-    }
-  };
-
-  const finish = async (finishStatus: 0 | 1 | 2, interruptType?: 0 | 1 | 2, reason?: string) => {
+  const finish = async (finishStatus: 0 | 1 | 2, interruptType?: 0 | 1 | 2, reason?: string): Promise<boolean> => {
     if (finishStatus === 1) prepareCompletionSound();
-    if (!active || finishingRef.current) return;
+    if (!active || finishingRef.current) return false;
     const elapsedAtFinish = Math.max(elapsedSeconds, Math.floor((Date.now() - active.start_time) / 1000));
     const plannedBlocks = Math.max(1, Math.floor(active.planned_seconds / BLOCK_SECONDS));
     const completionBlocks = Math.min(plannedBlocks, Math.max(1, Math.ceil(Math.min(elapsedAtFinish, active.planned_seconds) / BLOCK_SECONDS)));
     finishingRef.current = true;
     try {
-      const next = await pomodoroApi.finish(active.id, finishStatus, interruptType, reason);
+      const next = await withPomodoroRequestTimeout(
+        pomodoroApi.finish(active.id, finishStatus, interruptType, reason),
+        finishStatus === 2 ? "中断番茄钟" : "结束番茄钟",
+      );
+      // 作废中断前已发出的状态读取，避免它在新专注启动后写回旧的空闲状态。
+      loadRevisionRef.current += 1;
       setStatus(next);
-      setRecords(await pomodoroApi.records());
       setElapsedSeconds(0);
+      setError("");
+      // 计时状态已经落库，无需等待记录列表刷新；否则列表请求异常会让“中断”看似一直卡住。
+      void pomodoroApi.records().then(setRecords).catch(() => undefined);
       if (finishStatus === 1) {
+        const completion = { recordId: active.id, points: completionBlocks, actionId: active.action_id ?? undefined, completedAt: Date.now() };
+        savePomodoroCompletion(completion);
         playCompletionSound();
         setPlannedSeconds(BLOCK_SECONDS);
-        setCompletionResult({ points: completionBlocks, actionId: active.action_id });
+        setCompletionResult({ points: completion.points, actionId: completion.actionId });
+        notifyPomodoroChanged({ type: "completed", completion });
+      } else {
+        notifyPomodoroChanged();
       }
+      return true;
     } catch (cause) {
+      // 中断请求可能和另一窗口的状态同步同时发生；失败时重新读取服务端状态，
+      // 防止页面仍显示“可开始”，实际却留有进行中的番茄钟。
+      await syncPomodoroState();
       setError(userFacingError(cause));
+      return false;
     } finally {
       finishingRef.current = false;
     }
   };
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (showLoading = true) => {
+    const revision = ++loadRevisionRef.current;
+    if (showLoading) setLoading(true);
     try {
       const [next, nextRecords, nextActions, todaySchedule] = await Promise.all([
         pomodoroApi.status(),
@@ -295,17 +211,35 @@ export default function Pomodoro() {
         actionsApi.list(),
         dailyScheduleApi.get(localDate()),
       ]);
+      if (revision !== loadRevisionRef.current) return;
       const scheduledActionIds = new Set(todaySchedule.slots.flatMap((slot) => slot.action_id ? [slot.action_id] : []));
       const nextElapsed = next.active ? Math.max(0, Math.floor((Date.now() - next.active.start_time) / 1000)) : 0;
       setStatus(next);
       setRecords(nextRecords);
       setActions(nextActions.filter((item) => scheduledActionIds.has(item.id)));
       setElapsedSeconds(nextElapsed);
+      // 从复盘页返回时，组件会重新挂载；优先用已持久化的完成结果恢复成功页，
+      // 避免异步加载状态完成前把番茄钟误展示为默认状态。
+      setCompletionResult(next.active ? null : getStoredCompletionResult());
       setError("");
     } catch (cause) {
-      setError(userFacingError(cause));
+      if (revision === loadRevisionRef.current) setError(userFacingError(cause));
     } finally {
-      setLoading(false);
+      if (showLoading && revision === loadRevisionRef.current) setLoading(false);
+    }
+  };
+
+  const syncPomodoroState = async () => {
+    const revision = ++loadRevisionRef.current;
+    try {
+      const [next, nextRecords] = await Promise.all([pomodoroApi.status(), pomodoroApi.records()]);
+      if (revision !== loadRevisionRef.current) return;
+      setStatus(next);
+      setRecords(nextRecords);
+      setElapsedSeconds(next.active ? Math.max(0, Math.floor((Date.now() - next.active.start_time) / 1000)) : 0);
+      setCompletionResult(next.active ? null : getStoredCompletionResult());
+    } catch {
+      // 保留触发请求的原始错误，避免同步失败覆盖更有帮助的错误提示。
     }
   };
 
@@ -321,21 +255,50 @@ export default function Pomodoro() {
     } catch { /* 忽略无效的临时预设 */ }
   }, []);
   useEffect(() => {
-    document.body.classList.toggle("pomodoro-floating-mode", isFloating);
-    return () => document.body.classList.remove("pomodoro-floating-mode");
-  }, [isFloating]);
-  useEffect(() => () => {
-    if (floatingRef.current) void restoreNativeWindow(false).catch(() => undefined);
-  }, []);
+    const resetFloatingCompletion = () => {
+      // 悬浮窗口跳转复盘时，主窗口仍可能保留 completed 事件写入的内存状态。
+      // 同时清除内存和持久化结果，确保回到番茄钟时显示默认状态。
+      clearPomodoroCompletion();
+      setCompletionResult(null);
+    };
+    const openReview = (actionId?: number) => {
+      consumePomodoroReviewRequest();
+      resetFloatingCompletion();
+      navigate("/daily-list", actionId ? { state: { reviewActionId: actionId } } : undefined);
+    };
+    const consumeReviewRequest = () => {
+      const request = consumePomodoroReviewRequest();
+      if (!request) return;
+      resetFloatingCompletion();
+      navigate("/daily-list", request.actionId ? { state: { reviewActionId: request.actionId } } : undefined);
+    };
+    let unlisten: (() => void) | undefined;
+    window.addEventListener("focus", consumeReviewRequest);
+    void listenPomodoroChanged((message) => {
+      if (message.type === "window-mode") setWindowMode(message.mode);
+      if (message.type === "completed") setCompletionResult({ points: message.completion.points, actionId: message.completion.actionId });
+      if (message.type === "open-review") openReview(message.actionId);
+      if (message.type !== "open-review") void load();
+    }).then((cleanup) => { unlisten = cleanup; });
+    return () => {
+      window.removeEventListener("focus", consumeReviewRequest);
+      unlisten?.();
+    };
+  }, [navigate]);
+
   useEffect(() => {
     if (!active) {
       awardedBlocksRef.current = { recordId: 0, blocks: 0, awarding: false };
       return;
     }
-    awardedBlocksRef.current = { recordId: active.id, blocks: active.points_awarded, awarding: false };
+    awardedBlocksRef.current = windowMode === "main"
+      ? { recordId: active.id, blocks: active.points_awarded, awarding: false }
+      : { recordId: 0, blocks: 0, awarding: false };
     const timer = window.setInterval(() => {
       const nextElapsed = Math.max(0, Math.floor((Date.now() - active.start_time) / 1000));
+      // 两个 Webview 都需要重绘倒计时；仅当前计时主窗口负责完成和积分结算，避免重复请求。
       setElapsedSeconds(nextElapsed);
+      if (windowMode !== "main") return;
       if (nextElapsed >= active.planned_seconds) {
         void finish(1);
         return;
@@ -352,7 +315,8 @@ export default function Pomodoro() {
           awardedBlocksRef.current.blocks = nextBlocks;
           setStatus(next);
           setRecords(await pomodoroApi.records());
-          if (addedPoints > 0 && !floatingRef.current) {
+          notifyPomodoroChanged();
+          if (addedPoints > 0) {
             message.info({ content: `完成 ${addedPoints} 个30分钟专注，获得 ${addedPoints} 积分`, duration: 2 });
           }
         })
@@ -360,71 +324,69 @@ export default function Pomodoro() {
         .finally(() => { awardedBlocksRef.current.awarding = false; });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [active?.id, active?.start_time]);
+  }, [active?.id, active?.start_time, windowMode]);
 
   const goToReview = async () => {
     if (reviewNavigating) return;
     setReviewNavigating(true);
     try {
-      const wasFloating = floatingRef.current || Boolean(floatingSnapshotRef.current);
-      if (wasFloating) {
-        // 先立即移除悬浮模式样式，再等待原生窗口恢复，避免路由切换时页面仍按小窗口布局渲染。
-        setFloatingUi(false);
-        await restoreNativeWindow();
-        // 即使悬浮前的尺寸快照异常，也要在跳转前强制恢复到正常窗口尺寸。
-        if (isTauriRuntime()) {
-          const appWindow = getCurrentWindow();
-          await appWindow.setSize(new LogicalSize(1000, 650));
-          await appWindow.setFocus();
-        }
-        // 确保 Tauri 完成窗口尺寸/位置更新后再渲染今日事页面。
-        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-      }
       const actionId = completionResult?.actionId;
+      // 进入复盘即结束当前成功页；返回番茄钟时应重新显示可开始的默认状态。
+      clearPomodoroCompletion();
+      setCompletionResult(null);
       navigate("/daily-list", actionId ? { state: { reviewActionId: actionId } } : undefined);
     } finally {
       setReviewNavigating(false);
     }
   };
 
-  const startNewFocus = async () => {
+  const beginFocus = async (seconds: number) => {
+    if (starting) return;
     prepareCompletionSound();
-    setCompletionResult(null);
+    setStarting(true);
+    try {
+      const next = await withPomodoroRequestTimeout(pomodoroApi.start(selectedAction, seconds), "启动番茄钟");
+      loadRevisionRef.current += 1;
+      clearPomodoroCompletion();
+      setCompletionResult(null);
+      setStatus((current) => ({ ...current, active: next }));
+      setElapsedSeconds(0);
+      setError("");
+      notifyPomodoroChanged();
+      track("启动番茄钟", { planned_seconds: seconds, has_action: selectedAction !== undefined });
+    } catch (cause) {
+      // 后端拒绝启动通常意味着另一窗口仍有活动计时；立即同步，让页面回到真实状态而非看似卡住。
+      await syncPomodoroState();
+      setError(userFacingError(cause));
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const startNewFocus = async () => {
     setPlannedSeconds(BLOCK_SECONDS);
     setElapsedSeconds(0);
-    try {
-      const next = await pomodoroApi.start(selectedAction, BLOCK_SECONDS);
-      setStatus((current) => ({ ...current, active: next })); track("启动番茄钟", { planned_seconds: BLOCK_SECONDS, has_action: selectedAction !== undefined });
-    } catch (cause) {
-      setError(userFacingError(cause));
-    }
+    await beginFocus(BLOCK_SECONDS);
   };
 
   const start = async () => {
-    prepareCompletionSound();
-    try {
-      const next = await pomodoroApi.start(selectedAction, plannedSeconds);
-      setStatus((current) => ({ ...current, active: next })); track("启动番茄钟", { planned_seconds: BLOCK_SECONDS, has_action: selectedAction !== undefined });
-      setElapsedSeconds(0);
-    } catch (cause) {
-      setError(userFacingError(cause));
-    }
+    await beginFocus(plannedSeconds);
   };
 
   const submitInterrupt = async (values: { interruptType: number; reason?: string }) => {
+    // 先关闭弹窗和遮罩。即使原生命令异常未返回，也不能让透明遮罩拦截整页按钮。
+    setInterruptOpen(false);
+    form.resetFields();
     setInterrupting(true);
     try {
       await finish(2, Number(values.interruptType) as 0 | 1 | 2, values.reason);
-      setInterruptOpen(false);
-      form.resetFields();
     } finally {
       setInterrupting(false);
     }
   };
 
-  const stateText = !active ? "准备开始" : phaseInfo.phase === "work" ? "工作专注" : "休息 5 分钟";
+  const stateText = !active ? "准备开始" : phaseInfo.phase === "work" ? active.action_title || "自由专注" : "休息 5 分钟";
   const historyDuration = (seconds: number) => durationLabel(seconds);
-  const FloatingIcon = isFloating ? PanelTopOpen : PanelTopClose;
 
   return <div className="page pomodoro-page">
     <header className="page-header pomodoro-page-header">
@@ -449,24 +411,49 @@ export default function Pomodoro() {
           <Gift size={20} />{status.total_points}<span>积分</span>
         </div>
       </div>
-      {isFloating && <div className="pomodoro-drag-handle" data-tauri-drag-region="true" onMouseDown={(event) => { if (event.button === 0) { event.preventDefault(); void getCurrentWindow().startDragging(); } }} role="button" tabIndex={-1} aria-label="拖动窗口"><span className="pomodoro-drag-dots"><i /><i /><i /><i /><i /><i /></span></div>}
     </header>
-    {isFloating && <div className="pomodoro-resize-layer" aria-hidden="true">
-      {(['North', 'South', 'East', 'West', 'NorthEast', 'NorthWest', 'SouthEast', 'SouthWest'] as const).map((direction) => <div key={direction} className={`pomodoro-resize-handle pomodoro-resize-${direction.toLowerCase()}`} onPointerDown={(event) => { if (event.isPrimary && event.button === 0) { event.preventDefault(); event.stopPropagation(); void getCurrentWindow().startResizeDragging(direction); } }} />)}
-    </div>}
     {error && <Alert className="page-alert" type="error" showIcon message={error} closable onClose={() => setError("")} />}
     {loading ? <div className="card empty">正在加载…</div> : <div className="pomodoro-grid">
       <Card className="pomodoro-card" bordered={false}>
-        {active && <Tooltip title={isFloating ? "展开全部" : "悬浮置顶"}>
-          <Button type="text" className="pomodoro-floating-toggle" aria-label={isFloating ? "展开全部" : "悬浮置顶"} loading={floatingBusy} icon={<FloatingIcon size={18} />} onClick={() => void toggleFloatingMode()} />
+        {active && <Tooltip title="打开悬浮置顶番茄钟">
+          <Button type="text" className="pomodoro-floating-toggle" aria-label="打开悬浮置顶番茄钟" icon={<PanelTopClose size={18} />} onClick={() => void (async () => {
+            if (floatingSwitchingRef.current) return;
+            floatingSwitchingRef.current = true;
+            setPomodoroWindowMode("floating");
+            setWindowMode("floating");
+            notifyPomodoroChanged({ type: "window-mode", mode: "floating" });
+            let openedFloatingWindow: Awaited<ReturnType<typeof openPomodoroFloatingWindow>>;
+            try {
+              openedFloatingWindow = await openPomodoroFloatingWindow();
+              if (!openedFloatingWindow) throw new Error("无法打开悬浮番茄钟");
+              // 原生窗口创建成功后立即隐藏主窗口，不让按钮 loading 状态暴露在切换过程中。
+              // 悬浮窗口仍保持隐藏，直到其自行完成几何恢复并发出 ready 事件。
+              await getCurrentWindow().hide();
+              await setFloatingPomodoroMode(true);
+              await openedFloatingWindow.waitUntilReady();
+              await openedFloatingWindow.window.show();
+              await openedFloatingWindow.window.setFocus();
+            } catch (cause) {
+              // 首次创建但未能完成初始化时，清理隐藏的窗口，避免下次打开复用失效实例。
+              if (openedFloatingWindow?.isNew) await openedFloatingWindow.window.close().catch(() => undefined);
+              setPomodoroWindowMode("main");
+              setWindowMode("main");
+              notifyPomodoroChanged({ type: "window-mode", mode: "main" });
+              // 主窗口可能已隐藏；失败时必须恢复，避免应用处于没有可见窗口的状态。
+              await showMainWindow().catch(() => undefined);
+              setError(userFacingError(cause));
+            } finally {
+              floatingSwitchingRef.current = false;
+            }
+          })()} />
         </Tooltip>}
         {completionResult ? <div className="pomodoro-completion" role="status">
           <div className="pomodoro-completion-icon" aria-hidden="true">🎉</div>
-          <Typography.Title level={3}>恭喜你完成了 {completionResult.points} 个专注</Typography.Title>
-          <Typography.Paragraph>坚持到底，本次获得了 <strong>{completionResult.points}</strong> 积分</Typography.Paragraph>
+          <Typography.Title level={3}>恭喜完成专注</Typography.Title>
+          <Typography.Paragraph>本次获得 <strong>{completionResult.points}</strong> 积分</Typography.Paragraph>
           <div className="pomodoro-completion-actions">
-            <Button size="large" loading={reviewNavigating} onClick={() => void goToReview()}>去复盘</Button>
-            <Button type="primary" size="large" icon={<Play size={17} />} onClick={() => void startNewFocus()}>开启新专注</Button>
+            <Button size="middle" loading={reviewNavigating} onClick={() => void goToReview()}>去复盘</Button>
+            <Button type="primary" size="middle" icon={<Play size={16} />} loading={starting} disabled={starting} onClick={() => void startNewFocus()}>开启新专注</Button>
           </div>
         </div> : <>
           <div className={`pomodoro-ring pomodoro-ring-${phaseInfo.phase}`} style={{ "--pomodoro-progress": `${progress}%` } as React.CSSProperties}>
@@ -477,7 +464,7 @@ export default function Pomodoro() {
           {!active ? <div className="pomodoro-controls">
             <div className="pomodoro-control-field"><span className="pomodoro-control-label">专注行动</span><Select size="large" className="full-width" placeholder="关联今日行动（可选）" allowClear value={selectedAction} onChange={setSelectedAction} options={actions.map((item) => ({ value: item.id, label: item.title }))} /></div>
             <div className="pomodoro-control-field"><span className="pomodoro-control-label">专注时长</span><Select size="large" className="full-width" value={plannedSeconds} onChange={(value) => { setPlannedSeconds(value); setElapsedSeconds(0); }} options={durations} /></div>
-            <Button className="pomodoro-start-button" type="primary" size="large" icon={<Play size={17} />} onClick={() => void start()}>开始专注</Button>
+            <Button className="pomodoro-start-button" type="primary" size="large" icon={<Play size={17} />} loading={starting} disabled={starting} onClick={() => void start()}>开始专注</Button>
           </div> : <>
             <Space className="pomodoro-active-controls" size="middle"><Button type="primary" size="large" icon={<Play size={16} />} onClick={() => void finish(1)}>立即完成</Button><Button size="large" danger icon={<TimerReset size={16} />} onClick={() => setInterruptOpen(true)}>放弃并中断</Button></Space>
           </>}
@@ -489,7 +476,7 @@ export default function Pomodoro() {
         {historyRecords.length > recordsPageSize && <Pagination size="small" current={recordsPage} pageSize={recordsPageSize} total={historyRecords.length} showSizeChanger={false} onChange={setRecordsPage} />}
       </Card>
     </div>}
-    <Modal title="记录番茄中断" open={interruptOpen} onCancel={() => setInterruptOpen(false)} okText="保存" cancelText="取消" confirmLoading={interrupting} onOk={() => void form.submit()}><Form form={form} layout="vertical" onFinish={(values) => void submitInterrupt(values)}><Form.Item name="interruptType" label="打断类型" initialValue={0} rules={[{ required: true }]}><Select options={[{ value: 0, label: "内部分心" }, { value: 1, label: "外部干扰" }, { value: 2, label: "紧急事务" }]} /></Form.Item><Form.Item name="reason" label="打断原因"><Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} /></Form.Item></Form></Modal>
+    {interruptOpen && <Modal title="记录番茄中断" open destroyOnHidden onCancel={() => { setInterruptOpen(false); form.resetFields(); }} okText="保存" cancelText="取消" confirmLoading={interrupting} onOk={() => void form.submit()}><Form form={form} layout="vertical" onFinish={(values) => void submitInterrupt(values)}><Form.Item name="interruptType" label="打断类型" initialValue={0} rules={[{ required: true }]}><Select options={[{ value: 0, label: "内部分心" }, { value: 1, label: "外部干扰" }, { value: 2, label: "紧急事务" }]} /></Form.Item><Form.Item name="reason" label="打断原因"><Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} /></Form.Item></Form></Modal>}
   </div>;
 }
 

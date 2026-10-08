@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
-import { Button, Checkbox, Input, Modal, Select, Space, message } from "antd";
+import { Button, Checkbox, Input, Modal, Radio, Space, message } from "antd";
 import { ImagePlus, X } from "lucide-react";
-import MarkdownEditor from "@/components/ui/MarkdownEditor";
+import { createAnalyticsLogAttachment } from "@/lib/analytics";
 import { submitFeedback, type FeedbackAttachment, type FeedbackPayload } from "@/lib/feedback";
 
 const feedbackTypes = [
@@ -53,10 +53,21 @@ export default function FeedbackModal({ open, onClose, currentPage }: { open: bo
   };
 
   const handleSubmit = async () => {
-    if (!content.trim()) { message.warning("请描述你遇到的问题或想法。"); return; }
+    const description = content.trim();
+    if (!description) { message.warning("问题描述不能为空。"); return; }
+    if (Array.from(description).length < 8) { message.warning("问题描述不能少于 8 个字。"); return; }
     setSubmitting(true);
     try {
-      await submitFeedback({ type, content, contact: contact.trim() || undefined, allowContact, includeDiagnostics, currentPage, attachments });
+      let feedbackAttachments = attachments;
+      if (includeDiagnostics) {
+        try {
+          feedbackAttachments = [...attachments, await createAnalyticsLogAttachment()];
+        } catch (error) {
+          // 日志附件生成失败不应打断反馈，也不向普通用户暴露开发侧限制。
+          console.warn("反馈操作日志附件生成失败：", error);
+        }
+      }
+      await submitFeedback({ type, content, contact: contact.trim() || undefined, allowContact, includeDiagnostics, currentPage, attachments: feedbackAttachments });
       message.success("反馈已提交，感谢你的建议！");
       reset(); onClose();
     } catch (error) {
@@ -66,12 +77,20 @@ export default function FeedbackModal({ open, onClose, currentPage }: { open: bo
 
   return <Modal open={open} title="问题反馈" onCancel={handleClose} destroyOnHidden width={640} footer={<Space><Button onClick={handleClose} disabled={submitting}>取消</Button><Button type="primary" loading={submitting} onClick={() => void handleSubmit()}>提交反馈</Button></Space>}>
     <div className="feedback-form">
-      <label className="feedback-field"><span>反馈类型</span><Select value={type} options={[...feedbackTypes]} onChange={setType} /></label>
-      <label className="feedback-field"><span>问题描述</span><MarkdownEditor value={content} onChange={setContent} showToolbar minHeight={180} maxHeight={300} placeholder="请描述操作步骤、实际结果和期望结果……" /></label>
-      <div className="feedback-attachments"><div className="feedback-field-label">截图（选填）</div><div className="feedback-attachment-list">{attachments.map((attachment, index) => <div className="feedback-attachment" key={`${attachment.name}-${index}`}><img src={attachment.dataUrl} alt={attachment.name} /><button type="button" aria-label={`移除 ${attachment.name}`} onClick={() => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X size={14} /></button></div>)}<Button icon={<ImagePlus size={15} />} onClick={() => fileInputRef.current?.click()} disabled={attachments.length >= MAX_ATTACHMENTS}>添加图片</Button></div><input ref={fileInputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => { void addFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} /></div>
+      <label className="feedback-field">
+        <span>反馈类型</span>
+        <Radio.Group className="feedback-type-group" value={type} onChange={(event) => setType(event.target.value as FeedbackPayload["type"])} optionType="button" buttonStyle="solid">
+          {feedbackTypes.map((item) => <Radio.Button key={item.value} value={item.value}>{item.label}</Radio.Button>)}
+        </Radio.Group>
+      </label>
+      <label className="feedback-field">
+        <span className="feedback-field-label-required">问题描述</span>
+        <Input.TextArea value={content} onChange={(event) => setContent(event.target.value)} required minLength={8} autoSize={{ minRows: 4, maxRows: 12 }} placeholder="请描述操作步骤、实际结果和期望结果……" />
+      </label>
+      <div className="feedback-attachments"><div className="feedback-field-label">截图（选填）</div><div className="feedback-attachment-list">{attachments.map((attachment, index) => <div className="feedback-attachment" key={`${attachment.name}-${index}`}><img src={attachment.dataUrl} alt={attachment.name} /><button type="button" aria-label={`移除 ${attachment.name}`} onClick={() => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X size={14} /></button></div>)}<Button className="feedback-add-image" type="dashed" icon={<ImagePlus size={22} />} aria-label="添加图片" title="添加图片" onClick={() => fileInputRef.current?.click()} disabled={attachments.length >= MAX_ATTACHMENTS} /></div><input ref={fileInputRef} hidden type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(event) => { void addFiles(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} /></div>
       <label className="feedback-field"><span>联系方式（选填）</span><Input value={contact} onChange={(event) => setContact(event.target.value)} placeholder="邮箱或其他联系方式" maxLength={200} /></label>
       <Checkbox checked={allowContact} onChange={(event) => setAllowContact(event.target.checked)}>允许我们通过联系方式回复</Checkbox>
-      <Checkbox checked={includeDiagnostics} onChange={(event) => setIncludeDiagnostics(event.target.checked)}>附带应用诊断信息（版本、系统、当前页面，不包含任务内容）</Checkbox>
+      <Checkbox checked={includeDiagnostics} onChange={(event) => setIncludeDiagnostics(event.target.checked)}>附带应用诊断信息和操作日志（均不包含任务内容）</Checkbox>
     </div>
   </Modal>;
 }

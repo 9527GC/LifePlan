@@ -30,6 +30,7 @@ import Layout from "@/components/layout/Layout";
 import Inbox from "@/pages/Inbox";
 import DailyList from "@/pages/DailyList";
 import Pomodoro from "@/pages/Pomodoro";
+import FloatingPomodoro from "@/pages/FloatingPomodoro";
 import Rewards from "@/pages/Rewards";
 import DailyReviewDemo from "@/pages/DailyReviewDemo";
 import { systemApi } from "@/lib/api";
@@ -38,10 +39,11 @@ import { track } from "@/lib/analytics";
 import OnboardingCarousel from "@/components/ui/OnboardingCarousel";
 
 export default function App() {
+  const isFloatingPomodoroWindow = typeof window !== "undefined" && window.location.hash.startsWith("#/pomodoro-floating");
   const [notice, setNotice] = useState<StartupNotice | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState("");
-  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem("lifeplan-onboarding-v1-completed") !== "1" && localStorage.getItem("lifeplan-onboarding-completed") !== "1");
+  const [showOnboarding, setShowOnboarding] = useState(() => !isFloatingPomodoroWindow && localStorage.getItem("lifeplan-onboarding-v1-completed") !== "1" && localStorage.getItem("lifeplan-onboarding-completed") !== "1");
 
   useEffect(() => {
     const handleOpenOnboarding = () => setShowOnboarding(true);
@@ -59,9 +61,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (isFloatingPomodoroWindow) return;
     track("应用启动");
     void systemApi.startupNotice().then(setNotice).catch((error) => setRetryError(String(error)));
-  }, []);
+  }, [isFloatingPomodoroWindow]);
 
   const retryBackup = async () => {
     setRetrying(true);
@@ -96,7 +99,7 @@ export default function App() {
       },
     },
   }}>
-    {notice && <Alert
+    {!isFloatingPomodoroWindow && notice && <Alert
       className="startup-notice"
       type={notice.kind === "backup_warning" ? "warning" : "info"}
       showIcon
@@ -106,8 +109,8 @@ export default function App() {
       description={<span>{notice.message}{retryError && <span className="startup-notice-error">{retryError}</span>}</span>}
       action={notice.kind === "backup_warning" ? <Button size="small" loading={retrying} onClick={() => void retryBackup()}>立即重试</Button> : undefined}
     />}
-    {showOnboarding && <OnboardingCarousel onFinish={() => setShowOnboarding(false)} />}
-    <HashRouter><Routes><Route path="/" element={<Layout />}><Route index element={<Navigate to="/daily-list" replace />} /><Route path="daily-list" element={<DailyList />} /><Route path="pomodoro" element={<Pomodoro />} /><Route path="rewards" element={<Rewards />} /><Route path="daily-review" element={<DailyReviewDemo />} /><Route path="inbox" element={<Inbox />} /></Route></Routes></HashRouter>
+    {!isFloatingPomodoroWindow && showOnboarding && <OnboardingCarousel onFinish={() => setShowOnboarding(false)} />}
+    <HashRouter><Routes><Route path="pomodoro-floating" element={<FloatingPomodoro />} /><Route path="/" element={<Layout />}><Route index element={<Navigate to="/daily-list" replace />} /><Route path="daily-list" element={<DailyList />} /><Route path="pomodoro" element={<Pomodoro />} /><Route path="rewards" element={<Rewards />} /><Route path="daily-review" element={<DailyReviewDemo />} /><Route path="inbox" element={<Inbox />} /></Route></Routes></HashRouter>
   </ConfigProvider>;
 }
 

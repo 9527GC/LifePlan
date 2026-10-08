@@ -3,13 +3,15 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": [
-    "main"
+    "main",
+    "pomodoro-floating"
   ],
   "permissions": [
     "core:default",
     "opener:default",
     "opener:allow-reveal-item-in-dir",
     "core:window:allow-set-always-on-top",
+    "core:window:allow-set-skip-taskbar",
     "core:window:allow-set-decorations",
     "core:window:allow-set-focus",
     "core:window:allow-set-max-size",
@@ -31,6 +33,12 @@
           "url": "https://**"
         }
       ]
-    }
+    },
+    "core:window:allow-set-always-on-bottom",
+    "core:window:allow-is-always-on-top",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-unminimize"
   ]
 }

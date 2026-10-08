@@ -263,6 +263,10 @@ export default function DailyList() {
   };
 
   const openDailyReview = () => {
+    if (slots.every((slot) => slot.action_id == null)) {
+      message.warning('请先安排行动后再进行今日复盘');
+      return;
+    }
     const unreviewedSlots = slots.filter(
       (slot) => slot.action_id != null && !isSlotReviewed(slot),
     );

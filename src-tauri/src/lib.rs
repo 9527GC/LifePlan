@@ -18,7 +18,16 @@ pub mod commands;
 pub mod db;
 pub mod models;
 
+fn restore_regular_app_policy(app: &tauri::AppHandle) -> tauri::Result<()> {
+    #[cfg(target_os = "macos")]
+    app.set_activation_policy(tauri::ActivationPolicy::Regular)?;
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+    Ok(())
+}
+
 fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    restore_regular_app_policy(app)?;
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         if window.is_minimized()? {
             window.unminimize()?;
@@ -218,6 +227,7 @@ pub fn run() {
             system::get_startup_notice,
             system::retry_startup_backup,
             system::save_download_text_file,
+            system::set_floating_pomodoro_mode,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

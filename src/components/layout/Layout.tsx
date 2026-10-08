@@ -1,6 +1,6 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { availableMonitors, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
-import { isFloatingModeSaved, loadWindowGeometry, saveWindowGeometry } from "@/lib/windowPreferences";
+import { loadWindowGeometry, saveWindowGeometry } from "@/lib/windowPreferences";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { Archive, CalendarCheck, ArrowDown, Gift, HelpCircle, LoaderCircle, Minus, Square, Timer, X } from "lucide-react";
 import { Layout as AntLayout, Menu, message, Tooltip } from "antd";
@@ -84,16 +84,11 @@ export default function Layout() {
 
     const flushWindowGeometry = async () => {
       geometrySaveTimer = undefined;
-      if (isFloatingModeSaved()) {
-        pendingSize = undefined;
-        pendingPosition = undefined;
-        return;
-      }
       const size = pendingSize ?? await appWindow.innerSize();
       const position = pendingPosition ?? await appWindow.outerPosition();
       pendingSize = undefined;
       pendingPosition = undefined;
-      if (!disposed && !isFloatingModeSaved()) {
+      if (!disposed) {
         saveWindowGeometry({ width: size.width, height: size.height, x: position.x, y: position.y });
       }
     };
@@ -135,12 +130,10 @@ export default function Layout() {
       }
       if (disposed) return;
       unlistenResize = await appWindow.onResized(({ payload }) => {
-        if (isFloatingModeSaved()) return;
         pendingSize = payload;
         scheduleWindowGeometrySave();
       });
       unlistenMove = await appWindow.onMoved(({ payload }) => {
-        if (isFloatingModeSaved()) return;
         pendingPosition = payload;
         scheduleWindowGeometrySave();
       });
@@ -198,7 +191,7 @@ export default function Layout() {
       <div className="custom-titlebar-drag" data-tauri-drag-region />
       <div className="custom-titlebar-controls">
         <button type="button" aria-label="了解 LifePlan" title="了解 LifePlan" onMouseDown={(event) => event.stopPropagation()} onClick={openOnboarding}><HelpCircle size={16} /></button>
-        <button type="button" aria-label="问题反馈" title="问题反馈" onMouseDown={(event) => event.stopPropagation()} onClick={() => setFeedbackOpen(true)}><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" /><path d="M7 9h10" /><path d="M7 15h6" /></svg></button>
+        <button type="button" aria-label="问题反馈" title="问题反馈" onMouseDown={(event) => event.stopPropagation()} onClick={() => setFeedbackOpen(true)}><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" /><path d="M7 9h10" /><path d="M7 14h6" /></svg></button>
         <button type="button" aria-label="最小化" onMouseDown={(event) => event.stopPropagation()} onClick={minimize}><Minus size={16} /></button>
         <button type="button" aria-label="最大化" onMouseDown={(event) => event.stopPropagation()} onClick={toggleMaximize}><Square size={13} /></button>
         <button type="button" aria-label="关闭" className="custom-titlebar-close" onMouseDown={(event) => event.stopPropagation()} onClick={close}><X size={16} /></button>

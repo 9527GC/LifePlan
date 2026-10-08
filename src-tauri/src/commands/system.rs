@@ -45,3 +45,27 @@ pub fn save_download_text_file(filename: String, content: String) -> Result<Stri
     std::fs::write(&path, content.as_bytes()).map_err(|error| format!("保存文件失败：{error}"))?;
     Ok(path.display().to_string())
 }
+
+
+/// 切换仅悬浮番茄钟时的应用显示策略。
+/// macOS 使用辅助应用策略隐藏 Dock 图标；其他平台无需额外处理。
+#[tauri::command]
+pub fn set_floating_pomodoro_mode(enabled: bool, app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let policy = if enabled {
+            tauri::ActivationPolicy::Accessory
+        } else {
+            tauri::ActivationPolicy::Regular
+        };
+        app.set_activation_policy(policy)
+            .map_err(|error| format!("切换 macOS 应用显示策略失败：{error}"))?;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (enabled, app);
+    }
+
+    Ok(())
+}

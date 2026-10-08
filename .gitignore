@@ -37,3 +37,11 @@ docs/
 # 本地嵌入式 Python 运行时（构建时生成，不入库）
 Python/
 
+# 本地 UI 验收截图
+.ui-*.png
+# 本地浏览器自动化验收产物
+.playwright-cli/
+output/playwright/
+
+# 本地验收截图与临时输出
+output/

@@ -14,12 +14,16 @@ export interface FeedbackPayload {
 const FEEDBACK_API_URL = import.meta.env.VITE_FEEDBACK_API_URL || "https://api.lifeplan.gc9527.com/api/feedback";
 
 export async function submitFeedback(payload: FeedbackPayload) {
+  const { includeDiagnostics, ...feedback } = payload;
   const body = {
-    ...payload,
-    appVersion: "1.1.0",
-    platform: navigator.platform,
-    userAgent: navigator.userAgent,
-    clientTime: new Date().toISOString(),
+    ...feedback,
+    includeDiagnostics,
+    ...(includeDiagnostics ? {
+      appVersion: "1.1.0",
+      platform: navigator.platform,
+      userAgent: navigator.userAgent,
+      clientTime: new Date().toISOString(),
+    } : {}),
   };
   let response: Response;
   try { response = await fetch(FEEDBACK_API_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); }

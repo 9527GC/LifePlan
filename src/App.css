@@ -1878,9 +1878,9 @@ body.pomodoro-floating-mode .app-shell {
   margin-top: 12px;
 }
 .pomodoro-completion-actions .ant-btn {
-  min-width: 132px;
+  min-width: 116px;
   margin-top: 0;
-  border-radius: 10px;
+  border-radius: 8px;
 }
 .pomodoro-ring {
   width: 260px;
@@ -1920,8 +1920,13 @@ body.pomodoro-floating-mode .app-shell {
   letter-spacing: 2px;
 }
 .pomodoro-state {
+  width: min(72%, 260px);
+  overflow: hidden;
   color: #8c8c8c;
   font-size: 13px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .pomodoro-ring-work .pomodoro-state {
   color: #1778ff;
@@ -6567,12 +6572,237 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   max-height: calc(100vh - 32px) !important;
   max-height: calc(100dvh - 32px) !important;
 }
+
+/* 独立悬浮番茄钟窗口 */
+.pomodoro-floating-window {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(23, 120, 255, 0.16);
+  border-radius: 12px;
+  box-sizing: border-box;
+  box-shadow: 0 12px 32px rgba(31, 41, 55, 0.18);
+}
+.pomodoro-floating-titlebar {
+  height: 36px;
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 12px;
+  color: #596579;
+  font-size: 13px;
+  font-weight: 600;
+  user-select: none;
+  background: linear-gradient(90deg, #f8fbff, #fff);
+  border-bottom: 1px solid #edf1f7;
+}
+.pomodoro-floating-window-actions { display: flex; align-items: center; gap: 1px; padding-right: 4px; }
+.pomodoro-floating-window-actions .ant-btn { color: #697586; }
+.pomodoro-floating-content { min-height: 0; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 18px; }
+.pomodoro-floating-content .pomodoro-ring { width: min(62vw, 220px); height: min(62vw, 220px); min-width: 160px; min-height: 160px; }
+.pomodoro-floating-content .pomodoro-time { font-size: clamp(32px, 10vw, 42px); }
+.pomodoro-floating-action { max-width: 100%; overflow: hidden; color: #596579; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.pomodoro-floating-empty { color: #8c8c8c; font-size: 14px; }
+.pomodoro-floating-completion {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  color: #1f2937;
+  text-align: center;
+}
+.pomodoro-floating-completion-icon {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff3cd;
+  font-size: 32px;
+  box-shadow: 0 8px 20px rgba(250, 173, 20, 0.18);
+}
+.pomodoro-floating-completion > strong { font-size: 18px; }
+/* 仅设置积分文案颜色，避免覆盖 Ant Design 按钮内部的文字颜色。 */
+.pomodoro-floating-completion > span { color: #d48806; font-size: 14px; }
+.pomodoro-floating-completion-actions { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; }
+.pomodoro-floating-completion-actions .ant-btn { min-width: 96px; height: 34px; padding-inline: 10px; border-radius: 9px; }
+.pomodoro-floating-completion-actions .ant-btn-primary,
+.pomodoro-floating-completion-actions .ant-btn-primary > span { color: #fff; }
+.pomodoro-floating-error { margin: 8px 10px 0; }
+/* 悬浮番茄钟沿用原有的纯计时器视觉：不显示独立标题栏，计时环占据窗口中心。 */
+.pomodoro-floating-window {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  box-shadow: 0 10px 30px rgba(31, 41, 55, 0.18);
+}
+.pomodoro-floating-titlebar {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+.pomodoro-floating-titlebar > span { display: none; }
+.pomodoro-floating-window-actions {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  pointer-events: auto;
+}
+.pomodoro-floating-window-actions .ant-btn {
+  color: #596579;
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 8px;
+}
+.pomodoro-floating-window-actions .ant-btn:hover {
+  color: #1778ff !important;
+  background: #eaf4ff !important;
+}
+.pomodoro-floating-content {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 0;
+}
+.pomodoro-floating-content .pomodoro-ring {
+  width: min(86vw, 86vh);
+  height: min(86vw, 86vh);
+  min-width: 0;
+  min-height: 0;
+}
+.pomodoro-floating-content .pomodoro-time { font-size: clamp(34px, 13vw, 54px); }
+.pomodoro-floating-content .pomodoro-phase-meta { font-size: 12px; }
+.pomodoro-floating-action,
+.pomodoro-floating-empty,
+.pomodoro-floating-error { display: none; }
+/* 悬浮窗口内部使用白色内容面板，Tauri transparent 负责保留圆角外侧的透明区域。 */
+.pomodoro-floating-window {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  border: 0;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(31, 41, 55, 0.18);
+}
+.pomodoro-floating-titlebar { pointer-events: none; }
+.pomodoro-floating-window-actions { pointer-events: auto; }
+.pomodoro-floating-window-actions .ant-btn {
+  color: #596579;
+  background: rgba(255, 255, 255, 0.78);
+  border-radius: 8px;
+}
+.pomodoro-floating-window-actions .ant-btn:hover {
+  color: #1778ff !important;
+  background: #eaf4ff !important;
+}
+.pomodoro-floating-drag-handle {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 24px;
+  transform: translateX(-50%);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.pomodoro-floating-window:hover .pomodoro-floating-drag-handle,
+.pomodoro-floating-drag-handle:hover { opacity: 1; }
+.pomodoro-floating-drag-handle:active { cursor: grabbing; }
+.pomodoro-drag-dots {
+  display: grid;
+  width: 24px;
+  height: 14px;
+  grid-template-columns: repeat(3, 3px);
+  gap: 4px 6px;
+}
+.pomodoro-drag-dots i {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #aeb8c7;
+}
+.pomodoro-floating-content .pomodoro-floating-action-in-ring {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: min(72%, 260px);
+  margin-top: 4px;
+  overflow: hidden;
+  color: #1778ff;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pomodoro-floating-content .pomodoro-floating-rest-label { color: #52c41a; }
 .feedback-form { display: flex; flex-direction: column; gap: 14px; }
 .feedback-field { display: flex; flex-direction: column; gap: 6px; }
-.feedback-field > span, .feedback-field-label { color: #303133; font-size: 13px; font-weight: 600; }
+.feedback-field > span, .feedback-field-label { color: #1f1f1f; font-size: 14px; font-weight: 400; }
 .feedback-attachments { display: flex; flex-direction: column; gap: 8px; }
 .feedback-attachment-list { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .feedback-attachment { position: relative; width: 72px; height: 72px; overflow: hidden; border: 1px solid #e5e7eb; border-radius: 6px; background: #f8fafc; }
 .feedback-attachment img { width: 100%; height: 100%; object-fit: cover; }
 .feedback-attachment button { position: absolute; top: 3px; right: 3px; display: grid; width: 20px; height: 20px; padding: 0; place-items: center; color: #fff; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .58); cursor: pointer; }
 .feedback-form .ant-checkbox-wrapper { color: #596579; font-size: 12px; }
+
+.feedback-type-group {
+  display: flex;
+  width: 100%;
+}
+.feedback-type-group .ant-radio-button-wrapper {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+}
+.feedback-form .ant-input-textarea textarea {
+  resize: vertical;
+}
+@media (max-width: 520px) {
+  .feedback-type-group { flex-wrap: wrap; }
+  .feedback-type-group .ant-radio-button-wrapper { flex-basis: 50%; }
+}
+.feedback-add-image.ant-btn {
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  color: #8c8c8c;
+  border-color: #d9d9d9;
+  border-radius: 6px;
+}
+.feedback-add-image.ant-btn:not(:disabled):hover {
+  color: #1778ff;
+  border-color: #1778ff;
+}
+
+
+.feedback-field-label-required::before {
+  display: inline-block;
+  margin-inline-end: 4px;
+  color: #ff4d4f;
+  content: "*";
+}

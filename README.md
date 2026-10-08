@@ -1,7 +1,51 @@
-# Tauri + React + Typescript
+# LifePlan
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+LifePlan 是一款**本地优先**的桌面时间管理工具，帮助你通过“收集事件 → 拆解行动 → 安排今日 → 专注执行 → 每日复盘”建立个人执行闭环。
 
-## Recommended IDE Setup
+## 当前功能
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- **今日事与日程**：按日期安排事件行动、临时行动和重复行动；支持时间段、计划模板、执行记录与时间段复盘。
+- **事件篮**：收集事项，并按自己做、委托、推迟、放弃等方式处理；进行中的事件可直接管理行动。
+- **番茄钟**：可关联今日行动，记录专注、完成和中断；进行中的专注可切换为独立的置顶悬浮窗口，完成后可直接进入每日复盘或开启下一次专注。
+- **每日复盘**：基于当天日程和行动完成情况查看执行摘要、偏差与建议，并保存复盘思考。
+- **奖励池**：通过完成行动和专注积累积分，兑换自定义奖励并记录打卡。
+- **问题反馈**：通过左侧栏底部的帮助入口提交 Bug、建议或疑问，可选附带截图、联系方式和脱敏诊断信息。
+
+## 隐私与数据
+
+- 业务数据保存在本地 SQLite 数据库中，日常使用不依赖云同步。
+- 本地操作日志不记录事件标题、行动标题、目标、备注、复盘正文、文件路径或数据库内容。
+- 提交反馈时，只有勾选“附带应用诊断信息和操作日志”才会发送版本、平台、当前页面及脱敏操作日志；不勾选时不会发送这些信息。截图和联系方式均由用户自主填写。
+
+详细的产品边界见《[人生规划软件 V1.0](docs/人生规划软件%20V1.0.md)》，每日复盘规则见《[每日复盘功能说明](docs/daily-review-development.md)》。
+
+## 开发环境
+
+### 前置要求
+
+- Node.js 20 或更高版本
+- Rust stable 工具链
+- Tauri 2 的系统依赖（按目标平台安装）
+
+### 安装与运行
+
+```bash
+npm install
+npm run dev
+```
+
+启动桌面端开发环境：
+
+```bash
+npm run tauri dev
+```
+
+构建前端：
+
+```bash
+npm run build
+```
+
+## 反馈服务
+
+可选的反馈服务位于 `server` 目录，用于接收用户主动提交的反馈并发送邮件通知。部署说明见 [server/README.md](server/README.md)。
