@@ -7,6 +7,7 @@ import { Layout as AntLayout, Menu, message, Tooltip } from "antd";
 import "@/App.css";
 import { exportAnalyticsLog, track } from "@/lib/analytics";
 import { checkForUpdate, installUpdate, type AvailableUpdate } from "@/lib/updater";
+import FeedbackModal from "@/components/ui/FeedbackModal";
 
 const navItems = [
   { to: "/daily-list", icon: CalendarCheck, label: "今日事" },
@@ -51,6 +52,7 @@ export default function Layout() {
   const [quote, setQuote] = useState(() => quotes[Math.floor(Math.random() * quotes.length)]);
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
   const [isInstallingUpdate, setIsInstallingUpdate] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => { track("查看页面", { path: location.pathname }); }, [location.pathname]);
 
@@ -196,6 +198,7 @@ export default function Layout() {
       <div className="custom-titlebar-drag" data-tauri-drag-region />
       <div className="custom-titlebar-controls">
         <button type="button" aria-label="了解 LifePlan" title="了解 LifePlan" onMouseDown={(event) => event.stopPropagation()} onClick={openOnboarding}><HelpCircle size={16} /></button>
+        <button type="button" aria-label="问题反馈" title="问题反馈" onMouseDown={(event) => event.stopPropagation()} onClick={() => setFeedbackOpen(true)}><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" /><path d="M7 9h10" /><path d="M7 15h6" /></svg></button>
         <button type="button" aria-label="最小化" onMouseDown={(event) => event.stopPropagation()} onClick={minimize}><Minus size={16} /></button>
         <button type="button" aria-label="最大化" onMouseDown={(event) => event.stopPropagation()} onClick={toggleMaximize}><Square size={13} /></button>
         <button type="button" aria-label="关闭" className="custom-titlebar-close" onMouseDown={(event) => event.stopPropagation()} onClick={close}><X size={16} /></button>
@@ -209,5 +212,6 @@ export default function Layout() {
       </Tooltip>
     </AntLayout.Sider>
     <AntLayout><AntLayout.Content className="main-content"><Outlet /></AntLayout.Content></AntLayout>
+    <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} currentPage={location.pathname} />
   </AntLayout>;
 }

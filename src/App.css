@@ -6567,3 +6567,12 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   max-height: calc(100vh - 32px) !important;
   max-height: calc(100dvh - 32px) !important;
 }
+.feedback-form { display: flex; flex-direction: column; gap: 14px; }
+.feedback-field { display: flex; flex-direction: column; gap: 6px; }
+.feedback-field > span, .feedback-field-label { color: #303133; font-size: 13px; font-weight: 600; }
+.feedback-attachments { display: flex; flex-direction: column; gap: 8px; }
+.feedback-attachment-list { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.feedback-attachment { position: relative; width: 72px; height: 72px; overflow: hidden; border: 1px solid #e5e7eb; border-radius: 6px; background: #f8fafc; }
+.feedback-attachment img { width: 100%; height: 100%; object-fit: cover; }
+.feedback-attachment button { position: absolute; top: 3px; right: 3px; display: grid; width: 20px; height: 20px; padding: 0; place-items: center; color: #fff; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .58); cursor: pointer; }
+.feedback-form .ant-checkbox-wrapper { color: #596579; font-size: 12px; }
