@@ -1220,7 +1220,7 @@ body.pomodoro-floating-mode .app-shell {
 }
 .action-step-header {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 140px 112px 32px;
+  grid-template-columns: 28px minmax(0, 1fr) 164px 112px 32px;
   gap: 8px;
   padding: 0 10px;
   color: #8c8c8c;
@@ -1235,13 +1235,17 @@ body.pomodoro-floating-mode .app-shell {
 .action-step-header-duration {
   grid-column: 4;
 }
+.action-step-header-single,
+.action-step-row-single {
+  grid-template-columns: 28px minmax(0, 1fr) 164px 112px;
+}
 .action-step-wrap {
   display: grid;
   gap: 5px;
 }
 .action-step-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 140px 112px 32px;
+  grid-template-columns: 28px minmax(0, 1fr) 164px 112px 32px;
   align-items: center;
   gap: 8px;
   padding: 9px 10px;
@@ -1733,7 +1737,9 @@ body.pomodoro-floating-mode .app-shell {
     grid-template-columns: 1fr;
   }
   .action-step-header,
-  .action-step-row {
+  .action-step-row,
+  .action-step-header-single,
+  .action-step-row-single {
     grid-template-columns: 24px minmax(0, 1fr) 112px 96px 28px;
   }
 }
@@ -1745,7 +1751,8 @@ body.pomodoro-floating-mode .app-shell {
   .action-step-header {
     display: none;
   }
-  .action-step-row {
+  .action-step-row,
+  .action-step-row-single {
     grid-template-columns: 24px minmax(0, 1fr);
   }
   .action-step-date,

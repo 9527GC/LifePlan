@@ -13,7 +13,6 @@ import {
   Button,
   Card,
   Checkbox,
-  DatePicker,
   Empty,
   Form,
   Input,
@@ -49,6 +48,7 @@ import type {
   UpdateAction,
 } from "@/types";
 import { userFacingError } from "@/lib/errors";
+import DatePickerWithWeekday from "@/components/ui/DatePickerWithWeekday";
 import Modal from "@/components/ui/Modal";
 import { track } from "@/lib/analytics";
 import { sortByPriority } from "@/lib/prioritySort";
@@ -565,7 +565,7 @@ export default function Inbox() {
                   <Input.TextArea placeholder="你准备通过这件事获得什么结果？" autoSize={{ minRows: 3, maxRows: 5 }} />
                 </Form.Item>
                 <Form.Item label="截止日期" name="deadline">
-                  <DatePicker className="full-width" format="YYYY-MM-DD" />
+                  <DatePickerWithWeekday className="full-width" format="YYYY-MM-DD" />
                 </Form.Item>
                 <div className="form-grid">
                   <Form.Item name="importance" label={decisionLabel("重要程度", importanceHelp)}>
@@ -1320,7 +1320,7 @@ function EventActionModal({
             <Select options={hours} />
           </Form.Item>
           <Form.Item name="start_date" label="开始日期（选填）">
-            <DatePicker className="full-width" format="YYYY-MM-DD" />
+            <DatePickerWithWeekday className="full-width" format="YYYY-MM-DD" />
           </Form.Item>
         </div>
         <Form.Item name="is_frog" valuePropName="checked">
@@ -1504,7 +1504,7 @@ function ProcessModal({
         required ? [{ required: true, message: `请选择${label}` }] : undefined
       }
     >
-      <DatePicker className="full-width" format="YYYY-MM-DD" />
+      <DatePickerWithWeekday className="full-width" format="YYYY-MM-DD" />
     </Form.Item>
   );
   return (
@@ -1551,7 +1551,7 @@ function ProcessModal({
                     />
                   </Form.Item>
                   <Form.Item className="full" name="deadline" label="截止日期">
-                    <DatePicker className="full-width" format="YYYY-MM-DD" />
+                    <DatePickerWithWeekday className="full-width" format="YYYY-MM-DD" />
                   </Form.Item>
                   <Form.Item name="importance" label={decisionLabel("重要程度", importanceHelp)}>
                     <Select
@@ -1575,7 +1575,9 @@ function ProcessModal({
                   <Typography.Text type="secondary">
                     把事件拆成具体、可执行的行动，按回车键可快速添加。
                   </Typography.Text>
-                  <div className="action-step-header">
+                  <div
+                    className={`action-step-header${steps.length === 1 ? " action-step-header-single" : ""}`}
+                  >
                     <span className="action-step-header-title">行动标题 *</span>
                     <span className="action-step-header-date">
                       开始日期（选填）
@@ -1588,7 +1590,7 @@ function ProcessModal({
                   {steps.map((item, index) => (
                     <div key={index} className="action-step-wrap">
                       <div
-                        className="action-step-row"
+                        className={`action-step-row${steps.length === 1 ? " action-step-row-single" : ""}`}
                         data-action-step-index={index}
                       >
                         <span className="action-step-number">{index + 1}</span>
@@ -1604,7 +1606,7 @@ function ProcessModal({
                           }
                           placeholder="填写行动标题"
                         />
-                        <DatePicker
+                        <DatePickerWithWeekday
                           className="action-step-date"
                           aria-label="开始日期"
                           value={

@@ -49,6 +49,7 @@ import type {
 } from "@/types";
 import { userFacingError } from "@/lib/errors";
 import DailyDatePicker from "@/components/ui/DailyDatePicker";
+import DatePickerWithWeekday from "@/components/ui/DatePickerWithWeekday";
 import FrogHelp from "@/components/ui/FrogHelp";
 import WorkLogModal from "@/components/ui/WorkLogModal";
 import { track } from "@/lib/analytics";
@@ -458,6 +459,7 @@ export default function DailyList() {
             JSON.stringify({
               actionId: action.id,
               plannedSeconds: minutes * 60,
+              requestedAt: Date.now(),
             }),
           );
           setPickerSlot(null);
@@ -2281,7 +2283,7 @@ function NewActionForm({
           />
         </Form.Item>
         <Form.Item name="start_date" label="开始日期">
-          <DatePicker className="full-width" format="YYYY-MM-DD" />
+          <DatePickerWithWeekday className="full-width" format="YYYY-MM-DD" />
         </Form.Item>
         <Form.Item name="deadline" label="截止日期">
           <DatePicker className="full-width" format="YYYY-MM-DD" />

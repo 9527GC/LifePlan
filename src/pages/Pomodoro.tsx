@@ -84,6 +84,24 @@ const formatSeconds = (seconds: number) => `${String(Math.floor(seconds / 60)).p
 const durationLabel = (seconds: number) => durations.find((item) => item.value === seconds)?.label ?? `${Math.round(seconds / 60)}分钟`;
 const statusText = (status: number) => status === 1 ? "已完成" : status === 0 ? "已放弃" : status === 2 ? "已中断" : "进行中";
 const localDate = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; };
+type PomodoroPrefill = { actionId?: number; plannedSeconds?: number; requestedAt?: number };
+
+const consumePomodoroPrefill = (): PomodoroPrefill | null => {
+  const raw = sessionStorage.getItem("lifeplan-pomodoro-prefill");
+  if (!raw) return null;
+  sessionStorage.removeItem("lifeplan-pomodoro-prefill");
+  try {
+    const prefill = JSON.parse(raw) as PomodoroPrefill;
+    return {
+      actionId: Number.isFinite(prefill.actionId) ? prefill.actionId : undefined,
+      plannedSeconds: Number.isFinite(prefill.plannedSeconds) ? prefill.plannedSeconds : undefined,
+      requestedAt: Number.isFinite(prefill.requestedAt) ? prefill.requestedAt : Date.now(),
+    };
+  } catch {
+    return null;
+  }
+};
+
 const getStoredCompletionResult = () => {
   const completion = getPomodoroCompletion();
   return completion ? { points: completion.points, actionId: completion.actionId } : null;
@@ -130,18 +148,27 @@ const getPhaseInfo = (plannedSeconds: number, elapsedSeconds: number) => {
 };
 
 export default function Pomodoro() {
+  const [prefill] = useState(consumePomodoroPrefill);
+  const prefillRequestedAtRef = useRef(prefill?.requestedAt ?? 0);
   const [status, setStatus] = useState<PomodoroStatus>({ total_points: 0 });
   const [records, setRecords] = useState<PomodoroRecord[]>([]);
   const [actions, setActions] = useState<Action[]>([]);
-  const [selectedAction, setSelectedAction] = useState<number>();
-  const [plannedSeconds, setPlannedSeconds] = useState(BLOCK_SECONDS);
+  const [selectedAction, setSelectedAction] = useState<number | undefined>(prefill?.actionId);
+  const [plannedSeconds, setPlannedSeconds] = useState(prefill?.plannedSeconds ?? BLOCK_SECONDS);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [interruptOpen, setInterruptOpen] = useState(false);
   const [interrupting, setInterrupting] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [completionResult, setCompletionResult] = useState<{ points: number; actionId?: number } | null>(getStoredCompletionResult);
+  const [completionResult, setCompletionResult] = useState<{ points: number; actionId?: number } | null>(() => {
+    if (prefill) {
+      // 从行动发起新的番茄钟时，常规窗口必须直接进入该行动的待开始状态。
+      clearPomodoroCompletion();
+      return null;
+    }
+    return getStoredCompletionResult();
+  });
   const [reviewNavigating, setReviewNavigating] = useState(false);
   const [windowMode, setWindowMode] = useState(getPomodoroWindowMode);
   const [recordsPage, setRecordsPage] = useState(1);
@@ -276,7 +303,9 @@ export default function Pomodoro() {
     window.addEventListener("focus", consumeReviewRequest);
     void listenPomodoroChanged((message) => {
       if (message.type === "window-mode") setWindowMode(message.mode);
-      if (message.type === "completed") setCompletionResult({ points: message.completion.points, actionId: message.completion.actionId });
+      if (message.type === "completed" && message.completion.completedAt >= prefillRequestedAtRef.current) {
+        setCompletionResult({ points: message.completion.points, actionId: message.completion.actionId });
+      }
       if (message.type === "open-review") openReview(message.actionId);
       if (message.type !== "open-review") void load();
     }).then((cleanup) => { unlisten = cleanup; });
@@ -479,9 +508,3 @@ export default function Pomodoro() {
     {interruptOpen && <Modal title="记录番茄中断" open destroyOnHidden onCancel={() => { setInterruptOpen(false); form.resetFields(); }} okText="保存" cancelText="取消" confirmLoading={interrupting} onOk={() => void form.submit()}><Form form={form} layout="vertical" onFinish={(values) => void submitInterrupt(values)}><Form.Item name="interruptType" label="打断类型" initialValue={0} rules={[{ required: true }]}><Select options={[{ value: 0, label: "内部分心" }, { value: 1, label: "外部干扰" }, { value: 2, label: "紧急事务" }]} /></Form.Item><Form.Item name="reason" label="打断原因"><Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} /></Form.Item></Form></Modal>}
   </div>;
 }
-
-
-
-
-
-

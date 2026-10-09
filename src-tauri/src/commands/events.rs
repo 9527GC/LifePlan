@@ -248,7 +248,9 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
     let Some(status) = status else {
         return Err("事件不存在".into());
     };
-    if status == 1 && payload.decision != "delay" {
+    // 已开展行动的事件仍允许放弃；推迟也属于合法的状态流转。
+    // 只有重新自我处理或委托时，才需要阻止重复创建/分派行动。
+    if status == 1 && payload.decision != "delay" && payload.decision != "abandon" {
         return Err("已开展行动事件暂不支持该操作".into());
     }
     if status != 0 && status != 1 && status != 3 {
