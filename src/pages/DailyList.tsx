@@ -176,6 +176,11 @@ export default function DailyList() {
     void load();
   }, [date, showReviewSuggestions]);
   useEffect(() => {
+    const refresh = () => void load();
+    window.addEventListener("lifeplan:delays-restored", refresh);
+    return () => window.removeEventListener("lifeplan:delays-restored", refresh);
+  }, [date, showReviewSuggestions]);
+  useEffect(() => {
     if (!showReviewSuggestions || reviewSuggestions.length > 0) return;
     // 复盘保存与页面跳转可能接近同时完成，空结果时补查一次以避免错过刚落库的数据。
     const retryTimer = window.setTimeout(() => void load(), 800);

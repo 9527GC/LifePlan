@@ -179,6 +179,7 @@ pub fn run() {
             events::complete_event,
             events::restore_event,
             events::restore_delayed_event,
+            events::check_due_delays,
             actions::get_actions,
             actions::create_action,
             actions::update_action,

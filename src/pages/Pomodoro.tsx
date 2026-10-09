@@ -6,7 +6,7 @@ import { actionsApi, dailyScheduleApi, pomodoroApi } from "@/lib/api";
 import type { Action, PomodoroRecord, PomodoroStatus } from "@/types";
 import { userFacingError } from "@/lib/errors";
 import { track } from "@/lib/analytics";
-import { openPomodoroFloatingWindow, setFloatingPomodoroMode, showMainWindow } from "@/lib/pomodoroWindow";
+import { isPomodoroFloatingWindowOpen, openPomodoroFloatingWindow, setFloatingPomodoroMode, showMainWindow } from "@/lib/pomodoroWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listenPomodoroChanged, notifyPomodoroChanged } from "@/lib/pomodoroSync";
 import { clearPomodoroCompletion, consumePomodoroReviewRequest, getPomodoroCompletion, getPomodoroWindowMode, savePomodoroCompletion, setPomodoroWindowMode } from "@/lib/pomodoroSession";
@@ -171,6 +171,7 @@ export default function Pomodoro() {
   });
   const [reviewNavigating, setReviewNavigating] = useState(false);
   const [windowMode, setWindowMode] = useState(getPomodoroWindowMode);
+  const [windowModeReady, setWindowModeReady] = useState(false);
   const [recordsPage, setRecordsPage] = useState(1);
   const [form] = Form.useForm();
   const navigate = useNavigate();
@@ -270,7 +271,37 @@ export default function Pomodoro() {
     }
   };
 
-  useEffect(() => { void load(); }, []);
+  const reconcileWindowMode = async () => {
+    let nextMode = getPomodoroWindowMode();
+    if (nextMode === "floating" && !await isPomodoroFloatingWindowOpen()) {
+      // 窗口模式属于当前进程的运行时状态。应用重启或悬浮窗异常销毁后，
+      // localStorage 可能仍保留 floating，此时必须让常规窗口重新接管计时结算。
+      nextMode = "main";
+      setPomodoroWindowMode(nextMode);
+    }
+    setWindowMode(nextMode);
+    setWindowModeReady(true);
+  };
+
+  useEffect(() => {
+    let disposed = false;
+    const initialize = async () => {
+      try {
+        await reconcileWindowMode();
+      } catch {
+        // 无法确认悬浮窗存在时采用主窗口兜底，避免番茄钟到期后无人结算。
+        setPomodoroWindowMode("main");
+        if (!disposed) setWindowMode("main");
+      } finally {
+        if (!disposed) {
+          setWindowModeReady(true);
+          void load();
+        }
+      }
+    };
+    void initialize();
+    return () => { disposed = true; };
+  }, []);
   useEffect(() => {
     const raw = sessionStorage.getItem("lifeplan-pomodoro-prefill");
     if (!raw) return;
@@ -299,8 +330,13 @@ export default function Pomodoro() {
       resetFloatingCompletion();
       navigate("/daily-list", request.actionId ? { state: { reviewActionId: request.actionId } } : undefined);
     };
+    const handleFocus = () => {
+      consumeReviewRequest();
+      void reconcileWindowMode();
+      void syncPomodoroState();
+    };
     let unlisten: (() => void) | undefined;
-    window.addEventListener("focus", consumeReviewRequest);
+    window.addEventListener("focus", handleFocus);
     void listenPomodoroChanged((message) => {
       if (message.type === "window-mode") setWindowMode(message.mode);
       if (message.type === "completed" && message.completion.completedAt >= prefillRequestedAtRef.current) {
@@ -310,7 +346,7 @@ export default function Pomodoro() {
       if (message.type !== "open-review") void load();
     }).then((cleanup) => { unlisten = cleanup; });
     return () => {
-      window.removeEventListener("focus", consumeReviewRequest);
+      window.removeEventListener("focus", handleFocus);
       unlisten?.();
     };
   }, [navigate]);
@@ -327,7 +363,7 @@ export default function Pomodoro() {
       const nextElapsed = Math.max(0, Math.floor((Date.now() - active.start_time) / 1000));
       // 两个 Webview 都需要重绘倒计时；仅当前计时主窗口负责完成和积分结算，避免重复请求。
       setElapsedSeconds(nextElapsed);
-      if (windowMode !== "main") return;
+      if (!windowModeReady || windowMode !== "main") return;
       if (nextElapsed >= active.planned_seconds) {
         void finish(1);
         return;
@@ -353,7 +389,7 @@ export default function Pomodoro() {
         .finally(() => { awardedBlocksRef.current.awarding = false; });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [active?.id, active?.start_time, windowMode]);
+  }, [active?.id, active?.start_time, active?.planned_seconds, windowMode, windowModeReady]);
 
   const goToReview = async () => {
     if (reviewNavigating) return;
@@ -369,12 +405,12 @@ export default function Pomodoro() {
     }
   };
 
-  const beginFocus = async (seconds: number) => {
+  const beginFocus = async (seconds: number, actionId?: number) => {
     if (starting) return;
     prepareCompletionSound();
     setStarting(true);
     try {
-      const next = await withPomodoroRequestTimeout(pomodoroApi.start(selectedAction, seconds), "启动番茄钟");
+      const next = await withPomodoroRequestTimeout(pomodoroApi.start(actionId, seconds), "启动番茄钟");
       loadRevisionRef.current += 1;
       clearPomodoroCompletion();
       setCompletionResult(null);
@@ -382,7 +418,7 @@ export default function Pomodoro() {
       setElapsedSeconds(0);
       setError("");
       notifyPomodoroChanged();
-      track("启动番茄钟", { planned_seconds: seconds, has_action: selectedAction !== undefined });
+      track("启动番茄钟", { planned_seconds: seconds, has_action: actionId !== undefined });
     } catch (cause) {
       // 后端拒绝启动通常意味着另一窗口仍有活动计时；立即同步，让页面回到真实状态而非看似卡住。
       await syncPomodoroState();
@@ -392,14 +428,17 @@ export default function Pomodoro() {
     }
   };
 
-  const startNewFocus = async () => {
+  const configureNewFocus = () => {
+    clearPomodoroCompletion();
+    setSelectedAction(undefined);
+    setCompletionResult(null);
     setPlannedSeconds(BLOCK_SECONDS);
     setElapsedSeconds(0);
-    await beginFocus(BLOCK_SECONDS);
+    notifyPomodoroChanged();
   };
 
   const start = async () => {
-    await beginFocus(plannedSeconds);
+    await beginFocus(plannedSeconds, selectedAction);
   };
 
   const submitInterrupt = async (values: { interruptType: number; reason?: string }) => {
@@ -482,7 +521,7 @@ export default function Pomodoro() {
           <Typography.Paragraph>本次获得 <strong>{completionResult.points}</strong> 积分</Typography.Paragraph>
           <div className="pomodoro-completion-actions">
             <Button size="middle" loading={reviewNavigating} onClick={() => void goToReview()}>去复盘</Button>
-            <Button type="primary" size="middle" icon={<Play size={16} />} loading={starting} disabled={starting} onClick={() => void startNewFocus()}>开启新专注</Button>
+            <Button type="primary" size="middle" disabled={starting} onClick={configureNewFocus}>设置新专注</Button>
           </div>
         </div> : <>
           <div className={`pomodoro-ring pomodoro-ring-${phaseInfo.phase}`} style={{ "--pomodoro-progress": `${progress}%` } as React.CSSProperties}>

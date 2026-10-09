@@ -22,6 +22,7 @@ export const systemApi = {
 };
 
 export const eventsApi = {
+  checkDueDelays: () => invokeCommand<boolean>("check_due_delays"),
   list: () => invokeCommand<Event[]>("get_events"),
   create: (payload: NewEvent) => invokeCommand<Event>("create_event", { payload }),
   update: (payload: UpdateEvent) => invokeCommand<Event>("update_event", { payload }),

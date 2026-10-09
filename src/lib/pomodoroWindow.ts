@@ -13,12 +13,19 @@ type OpenFloatingPomodoroWindowResult = {
 export const POMODORO_FLOATING_WINDOW_LABEL = "pomodoro-floating";
 export const POMODORO_CHANGED_EVENT = "lifeplan:pomodoro-changed";
 export const POMODORO_FLOATING_WINDOW_READY_EVENT = "lifeplan:pomodoro-floating-window-ready";
+export const POMODORO_FLOATING_WINDOW_DEFAULT_SIZE = { width: 280, height: 300 } as const;
+export const POMODORO_FLOATING_WINDOW_MIN_SIZE = { width: 220, height: 240 } as const;
 
 export const isTauriRuntime = () => typeof window !== "undefined" && Boolean((window as TauriRuntimeWindow).__TAURI_INTERNALS__);
 
 export const setFloatingPomodoroMode = async (enabled: boolean) => {
   if (!isTauriRuntime()) return;
   await invoke("set_floating_pomodoro_mode", { enabled });
+};
+
+export const isPomodoroFloatingWindowOpen = async () => {
+  if (!isTauriRuntime()) return false;
+  return Boolean(await WebviewWindow.getByLabel(POMODORO_FLOATING_WINDOW_LABEL));
 };
 
 export const openPomodoroFloatingWindow = async (): Promise<OpenFloatingPomodoroWindowResult | undefined> => {
@@ -53,10 +60,10 @@ export const openPomodoroFloatingWindow = async (): Promise<OpenFloatingPomodoro
       const popup = new WebviewWindow(POMODORO_FLOATING_WINDOW_LABEL, {
         url: floatingUrl,
         title: "番茄钟",
-        width: 320,
-        height: 340,
-        minWidth: 260,
-        minHeight: 280,
+        width: POMODORO_FLOATING_WINDOW_DEFAULT_SIZE.width,
+        height: POMODORO_FLOATING_WINDOW_DEFAULT_SIZE.height,
+        minWidth: POMODORO_FLOATING_WINDOW_MIN_SIZE.width,
+        minHeight: POMODORO_FLOATING_WINDOW_MIN_SIZE.height,
         resizable: true,
         decorations: false,
         transparent: true,

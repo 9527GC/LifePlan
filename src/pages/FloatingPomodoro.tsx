@@ -9,11 +9,11 @@ import { userFacingError } from "@/lib/errors";
 import { getPhaseInfo, formatSeconds } from "@/lib/pomodoroPresentation";
 import { loadFloatingWindowGeometry, saveFloatingWindowGeometry } from "@/lib/windowPreferences";
 import { listenPomodoroChanged, notifyPomodoroChanged } from "@/lib/pomodoroSync";
-import { POMODORO_FLOATING_WINDOW_READY_EVENT, showMainWindow } from "@/lib/pomodoroWindow";
+import { POMODORO_FLOATING_WINDOW_MIN_SIZE, POMODORO_FLOATING_WINDOW_READY_EVENT, showMainWindow } from "@/lib/pomodoroWindow";
 import { clearPomodoroCompletion, getPomodoroCompletion, savePomodoroCompletion, savePomodoroReviewRequest, setPomodoroWindowMode } from "@/lib/pomodoroSession";
 
-const MIN_WIDTH = 260;
-const MIN_HEIGHT = 280;
+const MIN_WIDTH = POMODORO_FLOATING_WINDOW_MIN_SIZE.width;
+const MIN_HEIGHT = POMODORO_FLOATING_WINDOW_MIN_SIZE.height;
 const GEOMETRY_SAVE_DELAY = 180;
 
 export default function FloatingPomodoro() {
@@ -208,13 +208,15 @@ export default function FloatingPomodoro() {
     savePomodoroReviewRequest(completionResult?.actionId);
     // 悬浮窗口结束本轮专注并跳转复盘后，回到常规番茄钟应进入可重新开始的默认状态。
     clearPomodoroCompletion();
-    notifyPomodoroChanged({ type: "open-review", actionId: completionResult?.actionId });
+    // 必须等主窗口收到跳转消息后再关闭悬浮窗；否则关闭 Webview 可能中断尚未完成的事件发送，
+    // 主窗口虽然被唤起，但只会停留在常规番茄钟页，无法自动打开对应行动的复盘弹框。
+    await notifyPomodoroChanged({ type: "open-review", actionId: completionResult?.actionId });
     await closeFloatingWindow();
   };
 
   const startNewFocus = async () => {
     try {
-      const next = await pomodoroApi.start(undefined, 1800);
+      const next = await pomodoroApi.start(completionResult?.actionId, 1800);
       clearPomodoroCompletion();
       setCompletionResult(null);
       setStatus((current) => ({ ...current, active: next }));

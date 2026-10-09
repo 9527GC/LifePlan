@@ -30,16 +30,53 @@ fn row_to_event(row: &rusqlite::Row) -> rusqlite::Result<Event> {
     })
 }
 
-pub(crate) fn restore_due_delays(conn: &Connection) -> rusqlite::Result<()> {
+// 推迟日期按本地自然日解释，提前到前一天 17:00 恢复。
+pub(crate) fn restore_due_delays(conn: &Connection) -> rusqlite::Result<usize> {
+    restore_due_delays_at(
+        conn,
+        &chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+    )
+}
+
+fn restore_due_delays_at(conn: &Connection, local_now: &str) -> rusqlite::Result<usize> {
     let space_id = current_space_id(conn).map_err(to_sql_error)?;
     conn.execute(
         "UPDATE events
          SET status = delay_from_status, delay_until = NULL, delay_note = NULL,
              delay_from_status = 0, updated_at = ?1
          WHERE space_id = ?2 AND deleted_at IS NULL AND status = 3
-           AND delay_until IS NOT NULL AND date(delay_until) <= date('now', 'localtime')",
-        params![now_millis(), space_id],
-    )?;
+           AND delay_until IS NOT NULL
+           AND datetime(delay_until, '-1 day', '+17 hours') <= datetime(?3)",
+        params![now_millis(), space_id, local_now],
+    )
+}
+
+#[tauri::command]
+pub fn check_due_delays(state: State<'_, AppState>) -> Result<bool, String> {
+    let conn = state.db.lock().map_err(|error| error.to_string())?;
+    restore_due_delays(&conn)
+        .map(|count| count > 0)
+        .map_err(|error| error.to_string())
+}
+
+fn validate_delay_date(value: Option<&str>, local_now: &str) -> Result<(), String> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    let date = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map_err(|_| "重新处理日期格式无效".to_string())?;
+    if date.format("%Y-%m-%d").to_string() != value {
+        return Err("重新处理日期格式无效".into());
+    }
+    let restore_at = date
+        .pred_opt()
+        .and_then(|day| day.and_hms_opt(17, 0, 0))
+        .ok_or_else(|| "重新处理日期超出支持范围".to_string())?;
+    let now = chrono::NaiveDateTime::parse_from_str(local_now, "%Y-%m-%d %H:%M:%S")
+        .map_err(|error| error.to_string())?;
+    if restore_at <= now {
+        return Err("事件将在重新处理日期的前一天 17:00 恢复，请选择恢复时间尚未到达的日期".into());
+    }
     Ok(())
 }
 
@@ -341,6 +378,10 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
             .map_err(|error| error.to_string())?;
         }
         "delay" => {
+            validate_delay_date(
+                payload.delay_until.as_deref(),
+                &chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            )?;
             tx.execute(
                 "UPDATE events SET status = 3, delay_until = ?1, delay_note = ?2,
                  delay_from_status = CASE WHEN status = 3 THEN delay_from_status ELSE status END,
@@ -528,4 +569,120 @@ pub fn delete_event(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     )
     .map_err(|error| error.to_string())?;
     tx.commit().map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod delay_tests {
+    use super::*;
+
+    fn database() -> (Connection, String) {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(crate::db::migrations::INIT_MIGRATION)
+            .unwrap();
+        let space = crate::db::ensure_current_space(&mut conn).unwrap();
+        (conn, space)
+    }
+
+    fn insert(
+        conn: &Connection,
+        space: &str,
+        id: i64,
+        status: i32,
+        previous: i32,
+        date: Option<&str>,
+        deleted: bool,
+    ) {
+        conn.execute(
+            "INSERT INTO events (id, space_id, sync_id, title, status, delay_from_status, delay_until, delay_note, deleted_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, '测试事件', ?4, ?5, ?6, '推迟备注', ?7, 1, 1)",
+            params![id, space, format!("test-{id}"), status, previous, date, if deleted { Some(1) } else { None }],
+        ).unwrap();
+    }
+
+    #[test]
+    fn 前一天十七点边界及恢复原状态() {
+        let (conn, space) = database();
+        insert(&conn, &space, 1, 3, 0, Some("2026-10-12"), false);
+        insert(&conn, &space, 2, 3, 1, Some("2026-10-12"), false);
+        assert_eq!(
+            restore_due_delays_at(&conn, "2026-10-11 16:59:59").unwrap(),
+            0
+        );
+        assert_eq!(
+            restore_due_delays_at(&conn, "2026-10-11 17:00:00").unwrap(),
+            2
+        );
+        for (id, expected) in [(1, 0), (2, 1)] {
+            let actual: (i32, Option<String>, Option<String>, i32, i64) = conn.query_row(
+                "SELECT status, delay_until, delay_note, delay_from_status, updated_at FROM events WHERE id = ?1",
+                [id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            ).unwrap();
+            assert_eq!(
+                (actual.0, actual.1, actual.2, actual.3),
+                (expected, None, None, 0)
+            );
+            assert!(actual.4 > 1);
+        }
+        assert_eq!(
+            restore_due_delays_at(&conn, "2026-10-12 09:00:00").unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn 补恢复跨年跨月且不影响其他事件() {
+        let (conn, space) = database();
+        insert(&conn, &space, 1, 3, 0, Some("2027-01-01"), false);
+        insert(&conn, &space, 2, 3, 1, Some("2027-02-01"), false);
+        insert(&conn, &space, 3, 3, 0, None, false);
+        insert(&conn, &space, 4, 3, 0, Some("2027-01-01"), true);
+        insert(&conn, &space, 5, 5, 0, Some("2027-01-01"), false);
+        conn.execute("INSERT INTO local_spaces VALUES ('other', NULL, 1, 1)", [])
+            .unwrap();
+        insert(&conn, "other", 6, 3, 0, Some("2027-01-01"), false);
+        assert_eq!(
+            restore_due_delays_at(&conn, "2026-12-31 17:00:00").unwrap(),
+            1
+        );
+        assert_eq!(
+            restore_due_delays_at(&conn, "2027-01-31 16:59:59").unwrap(),
+            0
+        );
+        assert_eq!(
+            restore_due_delays_at(&conn, "2027-02-03 09:00:00").unwrap(),
+            1
+        );
+        for id in [3, 4, 6] {
+            let status: i32 = conn
+                .query_row("SELECT status FROM events WHERE id = ?1", [id], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(status, 3);
+        }
+        let status: i32 = conn
+            .query_row("SELECT status FROM events WHERE id = 5", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(status, 5);
+    }
+
+    #[test]
+    fn 日期校验拒绝已经到达恢复时刻及无效日期() {
+        assert!(validate_delay_date(Some("2026-10-10"), "2026-10-09 16:59:59").is_ok());
+        assert!(validate_delay_date(Some("2026-10-10"), "2026-10-09 17:00:00").is_err());
+        assert!(validate_delay_date(Some("2026-10-10"), "2026-10-09 18:00:00").is_err());
+        assert!(validate_delay_date(Some("2026-10-11"), "2026-10-09 18:00:00").is_ok());
+        assert!(validate_delay_date(None, "2026-10-09 18:00:00").is_ok());
+        for date in [
+            "",
+            "2026-02-30",
+            "invalid",
+            "2026-1-1",
+            "2026-10-11 12:00:00",
+        ] {
+            assert!(validate_delay_date(Some(date), "2026-10-09 18:00:00").is_err());
+        }
+    }
 }

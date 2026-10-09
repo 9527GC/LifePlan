@@ -240,6 +240,9 @@ export default function Inbox() {
   };
   useEffect(() => {
     void load();
+    const refresh = () => void load(false);
+    window.addEventListener("lifeplan:delays-restored", refresh);
+    return () => window.removeEventListener("lifeplan:delays-restored", refresh);
   }, []);
   useEffect(() => {
     const state = location.state as { guideNewEvent?: boolean } | null;
@@ -1688,7 +1691,25 @@ function ProcessModal({
             </div>
           ) : mode === "delay" ? (
             <div className="form-grid">
-              {dateField("delay_until", "重新处理日期")}
+              <Form.Item
+                name="delay_until"
+                label="重新处理日期"
+                extra="将在所选日期的前一天 17:00 自动恢复，便于提前安排行动；不选日期则仅手动恢复。"
+                rules={[{
+                  validator: (_, value: Dayjs | undefined) => {
+                    if (!value || (value.isValid() && value.startOf("day").subtract(1, "day").hour(17).isAfter(dayjs()))) {
+                      return Promise.resolve();
+                    }
+                    return Promise.reject(new Error("请选择恢复时间尚未到达的日期（前一天 17:00 恢复）"));
+                  },
+                }]}
+              >
+                <DatePickerWithWeekday
+                  className="full-width"
+                  format="YYYY-MM-DD"
+                  disabledDate={(date) => !date.startOf("day").subtract(1, "day").hour(17).isAfter(dayjs())}
+                />
+              </Form.Item>
               <Form.Item className="full" name="delay_note" label="备注">
                 <Input.TextArea autoSize={{ minRows: 3, maxRows: 5 }} />
               </Form.Item>

@@ -8,9 +8,9 @@ export type PomodoroSyncMessage =
   | { type: "completed"; completion: PomodoroCompletion }
   | { type: "open-review"; actionId?: number };
 
-export const notifyPomodoroChanged = (message: PomodoroSyncMessage = { type: "status-changed" }) => {
+export const notifyPomodoroChanged = async (message: PomodoroSyncMessage = { type: "status-changed" }) => {
   if (!isTauriRuntime()) return;
-  void emit(POMODORO_CHANGED_EVENT, message).catch(() => undefined);
+  await emit(POMODORO_CHANGED_EVENT, message).catch(() => undefined);
 };
 
 export const listenPomodoroChanged = (handler: (message: PomodoroSyncMessage) => void) => {

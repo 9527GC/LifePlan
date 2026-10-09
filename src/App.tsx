@@ -33,7 +33,7 @@ import Pomodoro from "@/pages/Pomodoro";
 import FloatingPomodoro from "@/pages/FloatingPomodoro";
 import Rewards from "@/pages/Rewards";
 import DailyReviewDemo from "@/pages/DailyReviewDemo";
-import { systemApi } from "@/lib/api";
+import { eventsApi, systemApi } from "@/lib/api";
 import type { StartupNotice } from "@/types";
 import { track } from "@/lib/analytics";
 import OnboardingCarousel from "@/components/ui/OnboardingCarousel";
@@ -64,6 +64,52 @@ export default function App() {
     if (isFloatingPomodoroWindow) return;
     track("应用启动");
     void systemApi.startupNotice().then(setNotice).catch((error) => setRetryError(String(error)));
+  }, [isFloatingPomodoroWindow]);
+
+  useEffect(() => {
+    if (isFloatingPomodoroWindow) return;
+    let running = false;
+    let stopped = false;
+    let boundaryTimer: number;
+    const check = async () => {
+      if (running || stopped) return;
+      running = true;
+      try {
+        if (await eventsApi.checkDueDelays() && !stopped) {
+          window.dispatchEvent(new Event("lifeplan:delays-restored"));
+        }
+      } catch (error) {
+        console.error("检查推迟事件恢复失败", error);
+      } finally {
+        running = false;
+      }
+    };
+    // 精确检查每日 17:00；轮询及返回窗口时补查，覆盖休眠、时钟调整等情况。
+    const scheduleBoundary = () => {
+      const now = new Date();
+      const next = new Date(now);
+      next.setHours(17, 0, 0, 0);
+      if (next <= now) next.setDate(next.getDate() + 1);
+      boundaryTimer = window.setTimeout(() => {
+        void check();
+        scheduleBoundary();
+      }, next.getTime() - now.getTime());
+    };
+    const onReturn = () => {
+      if (document.visibilityState === "visible") void check();
+    };
+    void check();
+    scheduleBoundary();
+    const interval = window.setInterval(() => void check(), 60_000);
+    window.addEventListener("focus", onReturn);
+    document.addEventListener("visibilitychange", onReturn);
+    return () => {
+      stopped = true;
+      window.clearTimeout(boundaryTimer);
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onReturn);
+      document.removeEventListener("visibilitychange", onReturn);
+    };
   }, [isFloatingPomodoroWindow]);
 
   const retryBackup = async () => {
