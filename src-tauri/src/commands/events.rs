@@ -460,8 +460,8 @@ pub fn complete_event(
             |row| row.get(0),
         )
         .map_err(|error| error.to_string())?;
-    if status != 1 {
-        return Err("只有进行中的事件才能标记完成".into());
+    if status != 1 && status != 2 {
+        return Err("只有进行中或已委托的事件才能标记完成".into());
     }
     let (action_count, completed): (i64, i64) = tx
         .query_row(
@@ -474,6 +474,9 @@ pub fn complete_event(
         .map_err(|error| error.to_string())?;
     // 没有拆解行动的事件可以通过“2分钟小事直接完成”快速完成；
     // 有行动时仍必须确保全部行动已完成。
+    if status == 2 && action_count == 0 {
+        return Err("委托跟进行动完成后才能标记完成".into());
+    }
     if completed != action_count {
         return Err("事件下所有行动完成后才能标记完成".into());
     }

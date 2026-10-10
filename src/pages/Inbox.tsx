@@ -842,6 +842,18 @@ function EventRow({
           >
             编辑
           </Button>
+          {item.status === 2 &&
+            item.action_count > 0 &&
+            item.completed_action_count === item.action_count && (
+              <Button
+                size="small"
+                type="primary"
+                icon={<Check size={14} />}
+                onClick={onComplete}
+              >
+                完成
+              </Button>
+            )}
           {item.status === 4 ? (
             <Button
               size="small"

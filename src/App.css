@@ -6869,3 +6869,17 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
 .action-start-date-preview-row > .ant-typography { flex: 1; min-width: 0; }
 .action-start-date-preview-row > span:last-child { flex-shrink: 0; font-size: 12px; color: #8c8c8c; }
 .action-start-date-preview-row > .action-start-date-conflict:last-child { color: #ff4d4f; }
+
+/* 启动占位保留主窗口的标题栏、侧栏和正文空间。 */
+.loading-state { display: flex; width: 100%; color: #667085; }
+.loading-state-body { display: flex; flex: 1; min-width: 0; align-items: center; justify-content: center; }
+.loading-state--startup { height: 100vh; padding-top: 32px; background: #fff; }
+.loading-state--startup .loading-state-body { height: 100%; border-top-left-radius: 8px; background: #f5f7fa; }
+.loading-state-sidebar { flex: 0 0 148px; padding: 0 20px; color: #1f1f1f; font-size: 16px; font-weight: 600; }
+/* 悬浮窗口保持透明，不引入主窗口背景和侧栏。 */
+.loading-state--floating { height: 100vh; background: transparent; }
+.loading-state-label { opacity: 0; animation: loading-label-appear 120ms ease-out 180ms forwards; }
+@keyframes loading-label-appear { to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .loading-state-label { animation: none; opacity: 1; }
+}

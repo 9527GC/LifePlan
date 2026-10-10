@@ -33,7 +33,24 @@ const chineseCalendarLocale = {
   },
 };
 // 主窗口与悬浮窗口按路由加载，避免任一窗口提前加载所有页面。
-const Layout = lazy(() => import("@/components/layout/Layout"));
+// 主窗口提前请求布局，缓存请求以避免重复加载；悬浮窗口不加载主布局。
+const loadLayout = (() => {
+  let pending: ReturnType<typeof importLayout> | undefined;
+  function importLayout() { return import("@/components/layout/Layout"); }
+  return () => (pending ??= importLayout());
+})();
+if (!window.location.hash.startsWith("#/pomodoro-floating")) {
+  void loadLayout().catch(() => undefined);
+  // 同时请求当前页面，避免等布局加载完成后才开始下载页面。
+  const path = window.location.hash.slice(1).split("?")[0];
+  const preloadPage = path === "/inbox" ? () => import("@/pages/Inbox")
+    : path === "/pomodoro" ? () => import("@/pages/Pomodoro")
+    : path === "/rewards" ? () => import("@/pages/Rewards")
+    : path === "/daily-review" ? () => import("@/pages/DailyReviewDemo")
+    : () => import("@/pages/DailyList");
+  void preloadPage().catch(() => undefined);
+}
+const Layout = lazy(loadLayout);
 const Inbox = lazy(() => import("@/pages/Inbox"));
 const DailyList = lazy(() => import("@/pages/DailyList"));
 const Pomodoro = lazy(() => import("@/pages/Pomodoro"));
@@ -169,8 +186,8 @@ export default function App() {
       description={<span>{notice.message}{retryError && <span className="startup-notice-error">{retryError}</span>}</span>}
       action={notice.kind === "backup_warning" ? <Button size="small" loading={retrying} onClick={() => void retryBackup()}>立即重试</Button> : undefined}
     />}
-    {!isFloatingPomodoroWindow && showOnboarding && <ChunkErrorBoundary><Suspense fallback={<LoadingState label="正在加载新手引导…" />}><OnboardingCarousel onFinish={() => setShowOnboarding(false)} /></Suspense></ChunkErrorBoundary>}
-    <HashRouter><ChunkErrorBoundary><Suspense fallback={<LoadingState />}><Routes><Route path="pomodoro-floating" element={<FloatingPomodoro />} /><Route path="/" element={<Layout />}><Route index element={<Navigate to="/daily-list" replace />} /><Route path="daily-list" element={<DailyList />} /><Route path="pomodoro" element={<Pomodoro />} /><Route path="rewards" element={<Rewards />} /><Route path="daily-review" element={<DailyReviewDemo />} /><Route path="inbox" element={<Inbox />} /></Route></Routes></Suspense></ChunkErrorBoundary></HashRouter>
+    {!isFloatingPomodoroWindow && showOnboarding && <ChunkErrorBoundary><Suspense fallback={null}><OnboardingCarousel onFinish={() => setShowOnboarding(false)} /></Suspense></ChunkErrorBoundary>}
+    <HashRouter><ChunkErrorBoundary><Suspense fallback={<LoadingState variant={isFloatingPomodoroWindow ? "floating" : "startup"} />}><Routes><Route path="pomodoro-floating" element={<FloatingPomodoro />} /><Route path="/" element={<Layout />}><Route index element={<Navigate to="/daily-list" replace />} /><Route path="daily-list" element={<DailyList />} /><Route path="pomodoro" element={<Pomodoro />} /><Route path="rewards" element={<Rewards />} /><Route path="daily-review" element={<DailyReviewDemo />} /><Route path="inbox" element={<Inbox />} /></Route></Routes></Suspense></ChunkErrorBoundary></HashRouter>
   </ConfigProvider>;
 }
 
