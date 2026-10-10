@@ -27,6 +27,7 @@ fn row_to_recurring_action(row: &rusqlite::Row) -> rusqlite::Result<RecurringAct
         sort_order: row.get(13)?,
         created_at: row.get(14)?,
         updated_at: row.get(15)?,
+        schedule_start_date: row.get(16)?,
     })
 }
 
@@ -36,7 +37,7 @@ fn list_recurring_actions(conn: &Connection) -> rusqlite::Result<Vec<RecurringAc
     let mut statement = conn.prepare(
         "SELECT id, title, estimated_hours, is_frog, importance, urgency, priority,
                 frequency_unit, frequency_count, auto_schedule, schedule_type, schedule_days,
-                start_time, sort_order, created_at, updated_at
+                start_time, sort_order, created_at, updated_at, schedule_start_date
          FROM recurring_actions
          WHERE space_id = ?1 AND deleted_at IS NULL
          ORDER BY sort_order, id",
@@ -66,6 +67,17 @@ fn validate_payload(payload: &NewRecurringAction) -> Result<(), String> {
     if !(1..=99).contains(&payload.frequency_count) {
         return Err("频率次数必须为 1 到 99".into());
     }
+    if matches!(payload.schedule_type.as_str(), "daily" | "weekly") {
+        if !(1..=4).contains(&payload.frequency_count) {
+            return Err("重复间隔必须为 1 到 4".into());
+        }
+        if !payload.schedule_start_date.is_empty() {
+            NaiveDate::parse_from_str(&payload.schedule_start_date, "%Y-%m-%d")
+                .map_err(|_| "开始日期格式无效".to_string())?;
+        } else if payload.frequency_count > 1 {
+            return Err("间隔重复需要设置开始日期".into());
+        }
+    }
     if ![0, 1].contains(&payload.auto_schedule) {
         return Err("自动安排设置无效".into());
     }
@@ -75,9 +87,7 @@ fn validate_payload(payload: &NewRecurringAction) -> Result<(), String> {
     ) {
         return Err("重复规则无效".into());
     }
-    if time_minutes(&payload.start_time).is_none() {
-        return Err("开始时间必须为半小时刻度".into());
-    }
+    parse_start_times(&payload.start_time)?;
     let days = parse_schedule_days(&payload.schedule_days);
     if payload.auto_schedule == 1
         && ((payload.schedule_type == "weekly"
@@ -101,6 +111,18 @@ fn time_minutes(value: &str) -> Option<i32> {
     }
 }
 
+// 沿用原有字段存储多个时间，兼容历史单时间数据和同步格式。
+fn parse_start_times(value: &str) -> Result<Vec<String>, String> {
+    let mut times = Vec::new();
+    for item in value.split(',') {
+        let minutes = time_minutes(item.trim()).ok_or("请至少选择一个有效的半小时开始时间")?;
+        times.push(format!("{:02}:{:02}", minutes / 60, minutes % 60));
+    }
+    times.sort();
+    times.dedup();
+    Ok(times)
+}
+
 fn parse_schedule_days(value: &str) -> Vec<u32> {
     value
         .split(',')
@@ -118,6 +140,34 @@ fn matches_date(schedule_type: &str, schedule_days: &str, date: NaiveDate) -> bo
         "monthly" => parse_schedule_days(schedule_days).contains(&date.day()),
         _ => false,
     }
+}
+
+// 每周以周一为边界计算自然周，日期锚点独立保存，不随普通编辑重置。
+fn matches_interval(template: &AutoTemplate, date: NaiveDate) -> bool {
+    if !matches_date(&template.schedule_type, &template.schedule_days, date) {
+        return false;
+    }
+    if !matches!(template.schedule_type.as_str(), "daily" | "weekly") {
+        return true;
+    }
+    if template.schedule_start_date.is_empty() {
+        return template.frequency_count == 1;
+    }
+    let Ok(start) = NaiveDate::parse_from_str(&template.schedule_start_date, "%Y-%m-%d") else {
+        return false;
+    };
+    if date < start || !(1..=4).contains(&template.frequency_count) {
+        return false;
+    }
+    let elapsed = if template.schedule_type == "weekly" {
+        let start_week =
+            start - chrono::Duration::days(start.weekday().num_days_from_monday() as i64);
+        let date_week = date - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
+        (date_week - start_week).num_days() / 7
+    } else {
+        (date - start).num_days()
+    };
+    elapsed % i64::from(template.frequency_count) == 0
 }
 
 #[tauri::command]
@@ -144,8 +194,8 @@ pub fn create_recurring_action(
     let timestamp = now_millis();
     let priority = calculate_priority(0, 0);
     conn.execute(
-        "INSERT INTO recurring_actions (space_id, sync_id, title, estimated_hours, is_frog, importance, urgency, priority, frequency_unit, frequency_count, auto_schedule, schedule_type, schedule_days, start_time, sort_order, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?16)",
+        "INSERT INTO recurring_actions (space_id, sync_id, title, estimated_hours, is_frog, importance, urgency, priority, frequency_unit, frequency_count, auto_schedule, schedule_type, schedule_days, start_time, sort_order, created_at, updated_at, schedule_start_date)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?16, ?17)",
         params![
             space_id,
             new_uuid(),
@@ -163,6 +213,7 @@ pub fn create_recurring_action(
             payload.start_time,
             sort_order,
             timestamp,
+            payload.schedule_start_date,
         ],
     )
     .map_err(|error| error.to_string())?;
@@ -191,6 +242,7 @@ pub fn update_recurring_action(
         schedule_type: payload.schedule_type,
         schedule_days: payload.schedule_days,
         start_time: payload.start_time,
+        schedule_start_date: payload.schedule_start_date,
     };
     validate_payload(&values)?;
     let conn = state.db.lock().map_err(|error| error.to_string())?;
@@ -203,7 +255,7 @@ pub fn update_recurring_action(
              SET title = ?1, estimated_hours = ?2, is_frog = ?3, importance = ?4,
                  urgency = ?5, priority = ?6, frequency_unit = ?7, frequency_count = ?8,
                  auto_schedule = ?9, schedule_type = ?10, schedule_days = ?11, start_time = ?12,
-                 updated_at = ?13
+                 schedule_start_date = ?16, updated_at = ?13
              WHERE id = ?14 AND space_id = ?15 AND deleted_at IS NULL",
             params![
                 values.title.trim(),
@@ -221,6 +273,7 @@ pub fn update_recurring_action(
                 timestamp,
                 payload.id,
                 space_id,
+                values.schedule_start_date,
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -242,6 +295,8 @@ struct AutoTemplate {
     schedule_type: String,
     schedule_days: String,
     start_time: String,
+    frequency_count: i32,
+    schedule_start_date: String,
 }
 
 #[derive(Debug)]
@@ -277,7 +332,7 @@ pub fn initialize_for_date(
         let mut statement = tx
             .prepare(
                 "SELECT title, estimated_hours, is_frog,
-                        schedule_type, schedule_days, start_time
+                        schedule_type, schedule_days, start_time, frequency_count, schedule_start_date
                  FROM recurring_actions
                  WHERE space_id = ?1 AND deleted_at IS NULL AND auto_schedule = 1
                  ORDER BY sort_order, id",
@@ -292,6 +347,8 @@ pub fn initialize_for_date(
                     schedule_type: row.get(3)?,
                     schedule_days: row.get(4)?,
                     start_time: row.get(5)?,
+                    frequency_count: row.get(6)?,
+                    schedule_start_date: row.get(7)?,
                 })
             })
             .map_err(|error| error.to_string())?
@@ -301,71 +358,73 @@ pub fn initialize_for_date(
     };
 
     for template in templates {
-        if !matches_date(&template.schedule_type, &template.schedule_days, date) {
+        // 模板只负责未来生成，不补排历史日期，不修改已初始化的日程。
+        if date < chrono::Local::now().date_naive() || !matches_interval(&template, date) {
             continue;
         }
-        let slots = {
-            let mut statement = tx
-                .prepare(
-                    "SELECT id, start_time, end_time, action_id
+        for start_time in parse_start_times(&template.start_time)? {
+            let slots = {
+                let mut statement = tx
+                    .prepare(
+                        "SELECT id, start_time, end_time, action_id
                      FROM daily_schedule_slots
                      WHERE space_id = ?1 AND list_date = ?2
                      ORDER BY start_time, sort_order, id",
-                )
-                .map_err(|error| error.to_string())?;
-            let rows = statement
-                .query_map(params![space_id, list_date], |row| {
-                    Ok(AvailableSlot {
-                        id: row.get(0)?,
-                        start_time: row.get(1)?,
-                        end_time: row.get(2)?,
-                        action_id: row.get(3)?,
+                    )
+                    .map_err(|error| error.to_string())?;
+                let rows = statement
+                    .query_map(params![space_id, list_date], |row| {
+                        Ok(AvailableSlot {
+                            id: row.get(0)?,
+                            start_time: row.get(1)?,
+                            end_time: row.get(2)?,
+                            action_id: row.get(3)?,
+                        })
                     })
-                })
-                .map_err(|error| error.to_string())?
-                .collect::<rusqlite::Result<Vec<_>>>()
-                .map_err(|error| error.to_string())?;
-            rows
-        };
-        let Some(start_index) = slots.iter().position(|slot| {
-            slot.start_time.as_str() <= template.start_time.as_str()
-                && template.start_time.as_str() < slot.end_time.as_str()
-        }) else {
-            continue;
-        };
-        if slots[start_index].action_id.is_some() {
-            continue;
-        }
-
-        let required_minutes = (template.estimated_hours * 60.0).round() as i32;
-        let mut selected_ids = Vec::new();
-        let mut arranged_minutes = 0;
-        let mut previous_end: Option<&str> = None;
-        for slot in slots.iter().skip(start_index) {
-            if slot.action_id.is_some()
-                || previous_end.is_some_and(|end| end != slot.start_time.as_str())
-            {
-                break;
-            }
-            let Some(start) = time_minutes(&slot.start_time) else {
-                break;
+                    .map_err(|error| error.to_string())?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(|error| error.to_string())?;
+                rows
             };
-            let Some(end) = time_minutes(&slot.end_time) else {
-                break;
+            let Some(start_index) = slots.iter().position(|slot| {
+                slot.start_time.as_str() <= start_time.as_str()
+                    && start_time.as_str() < slot.end_time.as_str()
+            }) else {
+                continue;
             };
-            selected_ids.push(slot.id);
-            arranged_minutes += end - start;
-            previous_end = Some(&slot.end_time);
-            if arranged_minutes >= required_minutes {
-                break;
+            if slots[start_index].action_id.is_some() {
+                continue;
             }
-        }
-        if selected_ids.is_empty() {
-            continue;
-        }
 
-        let timestamp = now_millis();
-        tx.execute(
+            let required_minutes = (template.estimated_hours * 60.0).round() as i32;
+            let mut selected_ids = Vec::new();
+            let mut arranged_minutes = 0;
+            let mut previous_end: Option<&str> = None;
+            for slot in slots.iter().skip(start_index) {
+                if slot.action_id.is_some()
+                    || previous_end.is_some_and(|end| end != slot.start_time.as_str())
+                {
+                    break;
+                }
+                let Some(start) = time_minutes(&slot.start_time) else {
+                    break;
+                };
+                let Some(end) = time_minutes(&slot.end_time) else {
+                    break;
+                };
+                selected_ids.push(slot.id);
+                arranged_minutes += end - start;
+                previous_end = Some(&slot.end_time);
+                if arranged_minutes >= required_minutes {
+                    break;
+                }
+            }
+            if selected_ids.is_empty() {
+                continue;
+            }
+
+            let timestamp = now_millis();
+            tx.execute(
             "INSERT INTO actions (space_id, sync_id, title, estimated_hours, is_frog, importance, urgency, priority, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
             params![
@@ -381,14 +440,15 @@ pub fn initialize_for_date(
             ],
         )
         .map_err(|error| error.to_string())?;
-        let action_id = tx.last_insert_rowid();
-        for slot_id in selected_ids {
-            tx.execute(
-                "UPDATE daily_schedule_slots SET action_id = ?1, updated_at = ?2
+            let action_id = tx.last_insert_rowid();
+            for slot_id in selected_ids {
+                tx.execute(
+                    "UPDATE daily_schedule_slots SET action_id = ?1, updated_at = ?2
                  WHERE id = ?3 AND space_id = ?4 AND action_id IS NULL",
-                params![action_id, timestamp, slot_id, space_id],
-            )
-            .map_err(|error| error.to_string())?;
+                    params![action_id, timestamp, slot_id, space_id],
+                )
+                .map_err(|error| error.to_string())?;
+            }
         }
     }
     tx.commit().map_err(|error| error.to_string())
@@ -499,6 +559,62 @@ pub fn create_action_from_recurring(
 mod tests {
     use super::*;
     use crate::db::{ensure_current_space, migrations};
+
+    #[test]
+    fn 每日和每周间隔以开始日期为锚点() {
+        let mut template = AutoTemplate {
+            title: "周期行动".into(),
+            estimated_hours: 0.5,
+            is_frog: 0,
+            schedule_type: "daily".into(),
+            schedule_days: "1,3".into(),
+            start_time: "09:00".into(),
+            frequency_count: 1,
+            schedule_start_date: "2026-12-30".into(),
+        };
+        let start = NaiveDate::from_ymd_opt(2026, 12, 30).unwrap();
+        for interval in 1..=4 {
+            template.frequency_count = interval;
+            for offset in -1..=30 {
+                assert_eq!(
+                    matches_interval(&template, start + chrono::Duration::days(offset)),
+                    offset >= 0 && offset % i64::from(interval) == 0
+                );
+            }
+            template.schedule_type = "weekly".into();
+            for offset in -2..=40 {
+                let date = start + chrono::Duration::days(offset);
+                let weeks = (offset + 2).div_euclid(7);
+                let expected = offset >= 0
+                    && [1, 3].contains(&date.weekday().number_from_monday())
+                    && weeks % i64::from(interval) == 0;
+                assert_eq!(matches_interval(&template, date), expected);
+            }
+            template.schedule_type = "daily".into();
+        }
+        template.schedule_type = "monthly".into();
+        template.schedule_days = "1".into();
+        assert!(matches_interval(
+            &template,
+            NaiveDate::from_ymd_opt(2027, 1, 1).unwrap()
+        ));
+        template.schedule_type = "daily".into();
+        template.schedule_start_date.clear();
+        template.frequency_count = 1;
+        assert!(matches_interval(&template, start));
+    }
+
+    #[test]
+    fn 开始时间兼容单选并排序去重和校验() {
+        assert_eq!(parse_start_times("08:30").unwrap(), vec!["08:30"]);
+        assert_eq!(
+            parse_start_times("11:30,08:30,11:30").unwrap(),
+            vec!["08:30", "11:30"]
+        );
+        for value in ["", "08:15", "24:00", "08:30,"] {
+            assert!(parse_start_times(value).is_err());
+        }
+    }
 
     #[test]
     fn 重复规则能匹配工作日星期和每月日期() {
@@ -621,5 +737,28 @@ mod tests {
                 ("07:30".to_string(), "08:00".to_string()),
             ]
         );
+        // 多个开始时间分别生成实例，同一日期重复初始化不重复生成。
+        conn.execute(
+            "UPDATE recurring_actions SET start_time = '07:30,06:30,07:30', estimated_hours = 0.5",
+            [],
+        )
+        .expect("设置多个开始时间失败");
+        initialize_for_date(&mut conn, "2026-10-13", "app_start").expect("多时间自动安排失败");
+        initialize_for_date(&mut conn, "2026-10-13", "app_start").expect("重复初始化失败");
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(DISTINCT action_id) FROM daily_schedule_slots WHERE list_date = '2026-10-13' AND action_id IS NOT NULL",
+            [], |row| row.get(0),
+        ).expect("查询多个行动实例失败");
+        assert_eq!(count, 2);
+        // 修改模板锚点，不触碰已经生成的日程和实例。
+        conn.execute("UPDATE recurring_actions SET schedule_type = 'daily', frequency_count = 2, schedule_start_date = '2026-10-14'", [])
+            .expect("修改周期锚点失败");
+        initialize_for_date(&mut conn, "2026-10-13", "app_start").unwrap();
+        initialize_for_date(&mut conn, "2026-10-14", "app_start").unwrap();
+        initialize_for_date(&mut conn, "2026-10-15", "app_start").unwrap();
+        let counts: Vec<i64> = ["2026-10-13", "2026-10-14", "2026-10-15"].iter().map(|date| {
+            conn.query_row("SELECT COUNT(DISTINCT action_id) FROM daily_schedule_slots WHERE list_date = ?1 AND action_id IS NOT NULL", [date], |row| row.get(0)).unwrap()
+        }).collect();
+        assert_eq!(counts, vec![2, 2, 0]);
     }
 }

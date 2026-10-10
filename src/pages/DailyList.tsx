@@ -6,6 +6,7 @@ import {
   Button,
   Checkbox,
   Empty,
+  DatePicker,
   Form,
   Input,
   Modal as AntModal,
@@ -32,6 +33,7 @@ import {
   ListTree,
   Rows3,
   CircleHelp,
+  MoreHorizontal,
 } from "lucide-react";
 import { actionsApi, dailyReviewApi, dailyScheduleApi, recurringActionsApi } from "@/lib/api";
 import type {
@@ -46,6 +48,7 @@ import type {
   DailyReviewSuggestion,
 } from "@/types";
 import { userFacingError } from "@/lib/errors";
+import ActionStartDateModal from "@/components/ui/ActionStartDateModal";
 import DailyDatePicker from "@/components/ui/DailyDatePicker";
 import FrogHelp from "@/components/ui/FrogHelp";
 import WorkLogModal from "@/components/ui/WorkLogModal";
@@ -1053,12 +1056,14 @@ function ActionPickerModal({
   const [recurringQuery, setRecurringQuery] = useState("");
   const [editingRecurringAction, setEditingRecurringAction] =
     useState<RecurringAction | null>(null);
+  const [dateAdjustment, setDateAdjustment] = useState<{ action: Action; following: Action[] } | null>(null);
   const [frogSaving, setFrogSaving] = useState(false);
   const [frogChecked, setFrogChecked] = useState(false);
 
   useEffect(() => {
     if (!slot) return;
     setMode("existing");
+    setDateAdjustment(null);
     setQuery("");
     setActionView((current) => {
       const saved = localStorage.getItem(ACTION_VIEW_STORAGE_KEY);
@@ -1123,6 +1128,13 @@ function ActionPickerModal({
     }
   };
 
+  const openDateAdjustment = (action: Action) => {
+    // 固定打开时的完整事件顺序，搜索结果不影响联动范围。
+    const eventActions = selectableActions.filter((item) => item.event_id === action.event_id)
+      .sort((a, b) => a.sort_order - b.sort_order || a.created_at - b.created_at || a.id - b.id);
+    const ordered = actionView === "flat" ? sortDailyActions(eventActions) : eventActions;
+    setDateAdjustment({ action, following: ordered.slice(ordered.findIndex((item) => item.id === action.id) + 1) });
+  };
   const performAssign = async (
     targets: DailyScheduleSlot[],
     actionId: number,
@@ -1329,6 +1341,11 @@ function ActionPickerModal({
       footer={null}
       destroyOnHidden
     >
+      {dateAdjustment && <ActionStartDateModal
+        action={dateAdjustment.action} following={dateAdjustment.following}
+        onClose={() => setDateAdjustment(null)}
+        onSaved={(updated) => { updated.forEach(onActionUpdated); setDateAdjustment(null); message.success(`已调整 ${updated.length} 条行动的开始日期`); }}
+      />}
       {(mode === "existing" || mode === "recurring" || mode === "new") && (
         <Radio.Group
           className="daily-picker-radio"
@@ -1415,6 +1432,7 @@ function ActionPickerModal({
             />
           ) : actionView === "flat" ? (
             flatVisibleActions.map((action, index) => (
+              <div className="daily-action-adjustable-card" key={action.id}>
               <button
                 className={`daily-action-picker-item ${action.id === slot.action_id ? "selected" : ""}`}
                 type="button"
@@ -1431,10 +1449,13 @@ function ActionPickerModal({
                   )}
                 />
               </button>
+              <ActionDateMenu disabled={saving} onOpen={() => openDateAdjustment(action)} />
+              </div>
             ))
           ) : (
             <EventActionPicker
               actions={visibleActions}
+              onAdjustDate={openDateAdjustment}
               slots={slots}
               saving={saving}
               onAssign={(id) => void assign(id)}
@@ -1825,11 +1846,13 @@ function DailySlotModal({
 }
 
 function EventActionPicker({
+  onAdjustDate,
   actions,
   slots,
   saving,
   onAssign,
 }: {
+  onAdjustDate: (action: Action) => void;
   actions: Action[];
   slots: DailyScheduleSlot[];
   saving: boolean;
@@ -1867,7 +1890,7 @@ function EventActionPicker({
       .map((group) => ({
         ...group,
         actions: [...group.actions].sort(
-          (left, right) => left.sort_order - right.sort_order,
+          (left, right) => left.sort_order - right.sort_order || left.created_at - right.created_at || left.id - right.id,
         ),
       })),
   );
@@ -1922,6 +1945,7 @@ function EventActionPicker({
             {expanded && (
           <div className="daily-event-action-children">
             {group.actions.map((action, index) => (
+              <div className="daily-action-adjustable-card" key={action.id}>
               <button
                 className={`daily-action-picker-item ${slots.some((item) => item.action_id === action.id) ? "selected" : ""}`}
                 type="button"
@@ -1940,6 +1964,8 @@ function EventActionPicker({
                   hideEventActionMeta
                 />
               </button>
+              <ActionDateMenu disabled={saving} onOpen={() => onAdjustDate(action)} />
+              </div>
             ))}
           </div>
             )}
@@ -2000,21 +2026,23 @@ function ActionPreview({
         <Tag color={priorityColor(action.priority)}>
           优先级 P{action.priority}
         </Tag>
-        <Tag
-          color={
-            action.estimated_hours <= 0.5
-          ? "blue"
-          : action.estimated_hours <= 1
-            ? "cyan"
-            : action.estimated_hours <= 1.5
-              ? "orange"
-              : "red"
-          }
-        >
-          {action.estimated_hours === 0.5
-            ? "30 分钟"
-            : `${action.estimated_hours} 小时`}
-        </Tag>
+        {action.estimated_hours > 0 && (
+          <Tag
+            color={
+              action.estimated_hours <= 0.5
+            ? "blue"
+            : action.estimated_hours <= 1
+              ? "cyan"
+              : action.estimated_hours <= 1.5
+                ? "orange"
+                : "red"
+            }
+          >
+            {action.estimated_hours === 0.5
+              ? "30 分钟"
+              : `${action.estimated_hours} 小时`}
+          </Tag>
+        )}
         {hideEventActionMeta ? (
           <>
             {action.start_date && (
@@ -2079,15 +2107,17 @@ function RecurringActionPreview({
     .split(",")
     .filter(Boolean)
     .map(Number);
+  const startTimesLabel = action.start_time.split(",").filter(Boolean).join("、");
+  const intervalLabel = action.frequency_count > 1 ? "每 " + action.frequency_count + (action.schedule_type === "daily" ? " 天" : " 周") : (action.schedule_type === "daily" ? "每天" : "每周");
   const frequencyLabel = action.auto_schedule !== 1
     ? "待设置重复规则"
     : action.schedule_type === "daily"
-    ? `每天 ${action.start_time}`
+    ? `${intervalLabel} ${startTimesLabel}`
     : action.schedule_type === "workday"
-      ? `每个工作日 ${action.start_time}`
+      ? `每个工作日 ${startTimesLabel}`
       : action.schedule_type === "weekly"
-        ? `每周${scheduleDays.map((day) => "一二三四五六日"[day - 1]).join("、")} ${action.start_time}`
-        : `每月 ${scheduleDays.join("、")} 日 ${action.start_time}`;
+        ? `${intervalLabel} 周${scheduleDays.map((day) => "一二三四五六日"[day - 1]).join("、")} ${startTimesLabel}`
+        : `每月 ${scheduleDays.join("、")} 日 ${startTimesLabel}`;
   return (
     <div className="daily-action-preview">
       <div className="daily-action-preview-title">
@@ -2095,21 +2125,23 @@ function RecurringActionPreview({
         <span className="daily-action-preview-title-text">{action.title}</span>
       </div>
       <div className="daily-action-preview-tags">
-        <Tag
-          color={
-            action.estimated_hours <= 0.5
-          ? "blue"
-          : action.estimated_hours <= 1
-            ? "cyan"
-            : action.estimated_hours <= 1.5
-              ? "orange"
-              : "red"
-          }
-        >
-          {action.estimated_hours === 0.5
-            ? "30 分钟"
-            : `${action.estimated_hours} 小时`}
-        </Tag>
+        {action.estimated_hours > 0 && (
+          <Tag
+            color={
+              action.estimated_hours <= 0.5
+            ? "blue"
+            : action.estimated_hours <= 1
+              ? "cyan"
+              : action.estimated_hours <= 1.5
+                ? "orange"
+                : "red"
+            }
+          >
+            {action.estimated_hours === 0.5
+              ? "30 分钟"
+              : `${action.estimated_hours} 小时`}
+          </Tag>
+        )}
         <Tag color="purple">{frequencyLabel}</Tag>
         {action.is_frog === 1 && <Tag color="green">青蛙</Tag>}
       </div>
@@ -2136,7 +2168,8 @@ function NewRecurringActionForm({
             estimated_hours: action.estimated_hours,
             is_frog: action.is_frog === 1,
             frequency_unit: action.frequency_unit,
-            frequency_count: action.frequency_count,
+            frequency_count: action.schedule_type === "workday" ? 1 : Math.min(4, Math.max(1, action.frequency_count)),
+            schedule_start_date: action.schedule_start_date ? dayjs(action.schedule_start_date) : dayjs(),
             schedule_type: action.schedule_type === "workday" ? "weekly" : action.schedule_type,
             schedule_days: action.schedule_type === "workday"
           ? [1, 2, 3, 4, 5]
@@ -2144,7 +2177,7 @@ function NewRecurringActionForm({
               .split(",")
               .filter(Boolean)
               .map(Number),
-            start_time: action.start_time,
+            start_time: action.start_time.split(",").filter(Boolean),
           }
         : {
             title: undefined,
@@ -2152,9 +2185,10 @@ function NewRecurringActionForm({
             is_frog: false,
             frequency_unit: "daily",
             frequency_count: 1,
+            schedule_start_date: dayjs(),
             schedule_type: "daily",
             schedule_days: [],
-            start_time: "08:30",
+            start_time: ["08:30"],
           },
     );
   }, [action, form]);
@@ -2177,7 +2211,7 @@ function NewRecurringActionForm({
           auto_schedule: 1,
           schedule_type: values.schedule_type,
           schedule_days: (values.schedule_days ?? []).join(","),
-          start_time: values.start_time,
+          start_time: [...new Set<string>(values.start_time)].sort().join(","),
         })
       }
     >
@@ -2203,8 +2237,20 @@ function NewRecurringActionForm({
             ]}
           />
         </Form.Item>
-        <Form.Item name="start_time" label="开始时间" rules={[{ required: true }]}>
+        <Form.Item
+          name="start_time"
+          label="开始时间（可多选）"
+          rules={[{ required: true, message: "请至少选择一个开始时间" }]}
+        >
           <Select
+            mode="multiple"
+            maxTagCount="responsive"
+            maxTagPlaceholder={(omittedValues) => (
+              <Tooltip title={omittedValues.map((item) => item.label).join("、")}>
+                <span>+{omittedValues.length}</span>
+              </Tooltip>
+            )}
+            placeholder="请选择开始时间"
             options={HALF_HOUR_TIMES.map((time) => ({ value: time, label: time }))}
           />
         </Form.Item>
@@ -2221,6 +2267,20 @@ function NewRecurringActionForm({
           ]}
             />
           </Form.Item>
+      {(scheduleType === "daily" || scheduleType === "weekly") && (
+        <div className="form-grid action-modal-grid">
+          <Form.Item name="frequency_count" label="重复间隔" rules={[{ required: true, message: "请选择重复间隔" }]}>
+            <Select options={[1, 2, 3, 4].map((count) => ({
+              value: count,
+              label: count === 1 ? (scheduleType === "daily" ? "每天" : "每周") : "每 " + count + (scheduleType === "daily" ? " 天" : " 周"),
+            }))} />
+          </Form.Item>
+          <Form.Item name="schedule_start_date" label="开始日期" rules={[{ required: true, message: "请选择开始日期" }]}
+          >
+            <DatePicker style={{ width: "100%" }} allowClear={false} />
+          </Form.Item>
+        </div>
+      )}
           {scheduleType === "weekly" && (
             <Form.Item
           name="schedule_days"
@@ -2332,4 +2392,10 @@ function NewActionForm({
       </Form.Item>
     </Form>
   );
+}
+
+function ActionDateMenu({ disabled, onOpen }: { disabled: boolean; onOpen: () => void }) {
+  return <Dropdown trigger={["click"]} menu={{ items: [{ key: "date", label: "调整开始日期", icon: <CalendarDays size={14} /> }], onClick: onOpen }}>
+    <Button className="daily-action-date-menu" type="text" size="small" disabled={disabled} icon={<MoreHorizontal size={18} />} aria-label="行动更多操作" />
+  </Dropdown>;
 }

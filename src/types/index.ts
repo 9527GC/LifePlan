@@ -124,6 +124,7 @@ export interface RecurringAction {
   auto_schedule: number;
   schedule_type: RecurringScheduleType;
   schedule_days: string;
+  schedule_start_date?: string;
   start_time: string;
   sort_order: number;
   created_at: number;
@@ -140,6 +141,7 @@ export interface NewRecurringAction {
   auto_schedule: number;
   schedule_type: RecurringScheduleType;
   schedule_days: string;
+  schedule_start_date?: string;
   start_time: string;
 }
 export type UpdateRecurringAction = NewRecurringAction & { id: number };

@@ -271,3 +271,108 @@ pub fn reorder_event_actions(
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
+
+#[derive(serde::Deserialize)]
+pub struct StartDateChange {
+    id: i64,
+    expected_updated_at: i64,
+    start_date: Option<String>,
+}
+#[derive(serde::Deserialize)]
+pub struct AdjustStartDates {
+    changes: Vec<StartDateChange>,
+}
+
+/// 只修改开始日期，整批校验并在同一事务内保存，避免部分成功或覆盖新修改。
+#[tauri::command]
+pub fn adjust_action_start_dates(
+    state: State<'_, AppState>,
+    payload: AdjustStartDates,
+) -> Result<Vec<Action>, String> {
+    let mut c = state.db.lock().map_err(|e| e.to_string())?;
+    let tx = c.transaction().map_err(|e| e.to_string())?;
+    let space = current_space_id(&tx).map_err(|e| e.to_string())?;
+    let actions = list_actions(&tx).map_err(|e| e.to_string())?;
+    let mut ids = HashSet::new();
+    let mut event_id = None;
+    for change in &payload.changes {
+        if !ids.insert(change.id) {
+            return Err("不能重复调整同一行动".into());
+        }
+        let action = actions
+            .iter()
+            .find(|a| a.id == change.id)
+            .ok_or("行动不存在")?;
+        if action.status != 0 || matches!(action.event_status, Some(3) | Some(5)) {
+            return Err("只能调整可编辑的未完成行动".into());
+        }
+        if action.updated_at != change.expected_updated_at {
+            return Err("行动已发生变化，请重新打开配置".into());
+        }
+        if action.event_id.is_none() {
+            return Err("只能调整事件行动".into());
+        }
+        if event_id.is_some() && event_id != action.event_id {
+            return Err("只能一并调整同一事件的行动".into());
+        }
+        event_id = action.event_id;
+        if let Some(date) = &change.start_date {
+            let parsed = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                .map_err(|_| "开始日期格式无效")?;
+            if parsed.format("%Y-%m-%d").to_string() != *date {
+                return Err("开始日期格式无效".into());
+            }
+            if action
+                .deadline
+                .as_ref()
+                .is_some_and(|deadline| date > deadline)
+            {
+                return Err(format!("{}：开始日期不能晚于截止日期", action.title));
+            }
+        }
+    }
+    let now = now_millis();
+    for change in &payload.changes {
+        tx.execute("UPDATE actions SET start_date=?1,updated_at=?2 WHERE id=?3 AND space_id=?4 AND deleted_at IS NULL", params![change.start_date, now, change.id, space]).map_err(|e| e.to_string())?;
+    }
+    let updated = list_actions(&tx)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|a| ids.contains(&a.id))
+        .collect();
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(updated)
+}
+
+#[derive(serde::Serialize)]
+pub struct ActionScheduledStartDate {
+    action_id: i64,
+    first_date: String,
+}
+
+/// 检查全部已有日程，而不只检查当前打开的日期。
+#[tauri::command]
+pub fn get_action_scheduled_start_dates(
+    state: State<'_, AppState>,
+    action_ids: Vec<i64>,
+) -> Result<Vec<ActionScheduledStartDate>, String> {
+    let c = state.db.lock().map_err(|e| e.to_string())?;
+    let space = current_space_id(&c).map_err(|e| e.to_string())?;
+    let ids: HashSet<i64> = action_ids.into_iter().collect();
+    let mut q = c.prepare("SELECT action_id,MIN(list_date) FROM daily_schedule_slots WHERE space_id=?1 AND action_id IS NOT NULL GROUP BY action_id").map_err(|e| e.to_string())?;
+    let rows = q
+        .query_map([space], |r| {
+            Ok(ActionScheduledStartDate {
+                action_id: r.get(0)?,
+                first_date: r.get(1)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    let result = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(result
+        .into_iter()
+        .filter(|item| ids.contains(&item.action_id))
+        .collect())
+}

@@ -6855,3 +6855,17 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   color: #ff4d4f;
   content: "*";
 }
+
+/* 日期调整菜单与选择按钮同级，避免嵌套按钮误触安排。 */
+.daily-action-adjustable-card { position: relative; min-width: 0; }
+.daily-action-adjustable-card > .daily-action-picker-item { width: 100%; padding-right: 42px; }
+.daily-action-date-menu { position: absolute; top: 10px; right: 8px; color: var(--text-secondary, #8c8c8c); }
+.action-start-date-form { display: flex; flex-direction: column; gap: 14px; }
+.action-start-date-input { display: flex; gap: 8px; }
+.action-start-date-input .full-width { flex: 1; min-width: 0; }
+.action-start-date-preview { padding: 4px 12px; border: 1px solid #f0f0f0; border-radius: 8px; }
+.action-start-date-preview-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; }
+.action-start-date-preview-row + .action-start-date-preview-row { border-top: 1px solid #f0f0f0; }
+.action-start-date-preview-row > .ant-typography { flex: 1; min-width: 0; }
+.action-start-date-preview-row > span:last-child { flex-shrink: 0; font-size: 12px; color: #8c8c8c; }
+.action-start-date-preview-row > .action-start-date-conflict:last-child { color: #ff4d4f; }

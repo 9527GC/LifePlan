@@ -183,6 +183,8 @@ pub fn run() {
             actions::get_actions,
             actions::create_action,
             actions::update_action,
+            actions::adjust_action_start_dates,
+            actions::get_action_scheduled_start_dates,
             actions::complete_action,
             actions::reorder_event_actions,
             actions::restore_action,

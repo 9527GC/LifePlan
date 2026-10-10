@@ -151,6 +151,8 @@ pub struct RecurringAction {
     pub auto_schedule: i32,
     pub schedule_type: String,
     pub schedule_days: String,
+    #[serde(default)]
+    pub schedule_start_date: String,
     pub start_time: String,
     pub sort_order: i64,
     pub created_at: i64,
@@ -169,6 +171,8 @@ pub struct NewRecurringAction {
     pub auto_schedule: i32,
     pub schedule_type: String,
     pub schedule_days: String,
+    #[serde(default)]
+    pub schedule_start_date: String,
     pub start_time: String,
 }
 
@@ -185,6 +189,8 @@ pub struct UpdateRecurringAction {
     pub auto_schedule: i32,
     pub schedule_type: String,
     pub schedule_days: String,
+    #[serde(default)]
+    pub schedule_start_date: String,
     pub start_time: String,
 }
 

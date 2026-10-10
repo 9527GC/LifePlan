@@ -1,4 +1,4 @@
-pub const CURRENT_SCHEMA_VERSION: i32 = 21;
+pub const CURRENT_SCHEMA_VERSION: i32 = 22;
 
 pub const INIT_MIGRATION: &str = r#"
 PRAGMA foreign_keys = OFF;
@@ -175,6 +175,7 @@ CREATE TABLE IF NOT EXISTS recurring_actions (
     auto_schedule INTEGER NOT NULL DEFAULT 0,
     schedule_type TEXT NOT NULL DEFAULT 'daily',
     schedule_days TEXT NOT NULL DEFAULT '',
+    schedule_start_date TEXT NOT NULL DEFAULT '',
     start_time TEXT NOT NULL DEFAULT '08:30',
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,

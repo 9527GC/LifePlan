@@ -134,7 +134,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
             .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
         return Ok(true);
     }
-    if version == 20 {
+    if version == 20 || version == 21 {
         ensure_recurring_schedule_schema(conn)?;
         conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
             .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
@@ -214,12 +214,18 @@ fn ensure_recurring_schedule_schema(conn: &Connection) -> Result<(), DbError> {
         ("schedule_type", "TEXT NOT NULL DEFAULT 'daily'"),
         ("schedule_days", "TEXT NOT NULL DEFAULT ''"),
         ("start_time", "TEXT NOT NULL DEFAULT '08:30'"),
+        ("schedule_start_date", "TEXT NOT NULL DEFAULT ''"),
     ] {
         if !column_exists(conn, "recurring_actions", column)? {
             conn.execute_batch(&format!(
                 "ALTER TABLE recurring_actions ADD COLUMN {column} {definition};"
             ))
             .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+            if column == "schedule_start_date" {
+                // 旧次数字段并非周期间隔，存量每日和每周规则保持原有执行频率。
+                conn.execute("UPDATE recurring_actions SET frequency_count = 1 WHERE schedule_type IN ('daily', 'weekly')", [])
+                    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+            }
         }
     }
     conn.execute_batch(
@@ -599,6 +605,17 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn v21升级保留重复行动并补齐开始日期() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(migrations::INIT_MIGRATION).unwrap();
+        conn.execute_batch("ALTER TABLE recurring_actions DROP COLUMN schedule_start_date; PRAGMA user_version = 21;").unwrap();
+        run_migrations(&mut conn).unwrap();
+        assert!(column_exists(&conn, "recurring_actions", "schedule_start_date").unwrap());
+        assert_eq!(conn.pragma_query_value::<i32, _>(None, "user_version", |row| row.get(0)).unwrap(), 22);
+        run_migrations(&mut conn).unwrap();
+    }
 
     #[test]
     fn 仅显式生产构建使用生产数据目录() {
