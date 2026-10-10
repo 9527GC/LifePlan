@@ -1,10 +1,16 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import dayjs from "dayjs";
 import updateLocale from "dayjs/plugin/updateLocale";
 import "dayjs/locale/zh-cn";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Alert, Button, ConfigProvider } from "antd";
 import zhCN from "antd/locale/zh_CN";
+import { eventsApi, recurringActionsApi, systemApi } from "@/lib/api";
+import ChunkErrorBoundary from "@/components/ui/ChunkErrorBoundary";
+import LoadingState from "@/components/ui/LoadingState";
+import "./App.css";
+import type { StartupNotice } from "@/types";
+import { track } from "@/lib/analytics";
 
 dayjs.extend(updateLocale);
 dayjs.updateLocale("zh-cn", {
@@ -26,17 +32,15 @@ const chineseCalendarLocale = {
     },
   },
 };
-import Layout from "@/components/layout/Layout";
-import Inbox from "@/pages/Inbox";
-import DailyList from "@/pages/DailyList";
-import Pomodoro from "@/pages/Pomodoro";
-import FloatingPomodoro from "@/pages/FloatingPomodoro";
-import Rewards from "@/pages/Rewards";
-import DailyReviewDemo from "@/pages/DailyReviewDemo";
-import { eventsApi, recurringActionsApi, systemApi } from "@/lib/api";
-import type { StartupNotice } from "@/types";
-import { track } from "@/lib/analytics";
-import OnboardingCarousel from "@/components/ui/OnboardingCarousel";
+// 主窗口与悬浮窗口按路由加载，避免任一窗口提前加载所有页面。
+const Layout = lazy(() => import("@/components/layout/Layout"));
+const Inbox = lazy(() => import("@/pages/Inbox"));
+const DailyList = lazy(() => import("@/pages/DailyList"));
+const Pomodoro = lazy(() => import("@/pages/Pomodoro"));
+const FloatingPomodoro = lazy(() => import("@/pages/FloatingPomodoro"));
+const Rewards = lazy(() => import("@/pages/Rewards"));
+const DailyReviewDemo = lazy(() => import("@/pages/DailyReviewDemo"));
+const OnboardingCarousel = lazy(() => import("@/components/ui/OnboardingCarousel"));
 
 export default function App() {
   const isFloatingPomodoroWindow = typeof window !== "undefined" && window.location.hash.startsWith("#/pomodoro-floating");
@@ -165,8 +169,8 @@ export default function App() {
       description={<span>{notice.message}{retryError && <span className="startup-notice-error">{retryError}</span>}</span>}
       action={notice.kind === "backup_warning" ? <Button size="small" loading={retrying} onClick={() => void retryBackup()}>立即重试</Button> : undefined}
     />}
-    {!isFloatingPomodoroWindow && showOnboarding && <OnboardingCarousel onFinish={() => setShowOnboarding(false)} />}
-    <HashRouter><Routes><Route path="pomodoro-floating" element={<FloatingPomodoro />} /><Route path="/" element={<Layout />}><Route index element={<Navigate to="/daily-list" replace />} /><Route path="daily-list" element={<DailyList />} /><Route path="pomodoro" element={<Pomodoro />} /><Route path="rewards" element={<Rewards />} /><Route path="daily-review" element={<DailyReviewDemo />} /><Route path="inbox" element={<Inbox />} /></Route></Routes></HashRouter>
+    {!isFloatingPomodoroWindow && showOnboarding && <ChunkErrorBoundary><Suspense fallback={<LoadingState label="正在加载新手引导…" />}><OnboardingCarousel onFinish={() => setShowOnboarding(false)} /></Suspense></ChunkErrorBoundary>}
+    <HashRouter><ChunkErrorBoundary><Suspense fallback={<LoadingState />}><Routes><Route path="pomodoro-floating" element={<FloatingPomodoro />} /><Route path="/" element={<Layout />}><Route index element={<Navigate to="/daily-list" replace />} /><Route path="daily-list" element={<DailyList />} /><Route path="pomodoro" element={<Pomodoro />} /><Route path="rewards" element={<Rewards />} /><Route path="daily-review" element={<DailyReviewDemo />} /><Route path="inbox" element={<Inbox />} /></Route></Routes></Suspense></ChunkErrorBoundary></HashRouter>
   </ConfigProvider>;
 }
 

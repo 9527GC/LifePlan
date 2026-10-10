@@ -1,13 +1,13 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { lazy, Suspense, useEffect, useState, type MouseEvent } from "react";
 import { availableMonitors, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import { loadWindowGeometry, saveWindowGeometry } from "@/lib/windowPreferences";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { Archive, CalendarCheck, ArrowDown, Gift, HelpCircle, LoaderCircle, Minus, Square, Timer, X } from "lucide-react";
 import { Layout as AntLayout, Menu, message, Tooltip } from "antd";
-import "@/App.css";
+import LoadingState from "@/components/ui/LoadingState";
 import { exportAnalyticsLog, track } from "@/lib/analytics";
 import { checkForUpdate, installUpdate, type AvailableUpdate } from "@/lib/updater";
-import FeedbackModal from "@/components/ui/FeedbackModal";
+const FeedbackModal = lazy(() => import("@/components/ui/FeedbackModal"));
 
 const navItems = [
   { to: "/daily-list", icon: CalendarCheck, label: "今日事" },
@@ -204,7 +204,7 @@ export default function Layout() {
         <div className="sidebar-note" tabIndex={0} onMouseDown={(event) => event.preventDefault()} onDoubleClick={refreshQuote} aria-label="双击更换名言警句">{quote}</div>
       </Tooltip>
     </AntLayout.Sider>
-    <AntLayout><AntLayout.Content className="main-content"><Outlet /></AntLayout.Content></AntLayout>
-    <FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} currentPage={location.pathname} />
+    <AntLayout><AntLayout.Content className="main-content"><Suspense fallback={<LoadingState />}><Outlet /></Suspense></AntLayout.Content></AntLayout>
+    {feedbackOpen && <Suspense fallback={null}><FeedbackModal open={feedbackOpen} onClose={() => setFeedbackOpen(false)} currentPage={location.pathname} /></Suspense>}
   </AntLayout>;
 }
