@@ -2,7 +2,7 @@
   height: 100vh;
   padding-top: 32px;
   box-sizing: border-box;
-  background: #f5f7fa;
+  background: #fff;
 }
 .custom-titlebar {
   position: fixed;
@@ -56,6 +56,13 @@ body.pomodoro-floating-mode .app-shell {
 .app-shell > .ant-layout {
   display: flex;
   height: 100%;
+}
+/* 白色外层承接导航和顶部栏，内容区圆角固定，不随正文滚动。 */
+.app-shell > .ant-layout {
+  min-width: 0;
+  border-top-left-radius: 8px;
+  overflow: hidden;
+  background: #f5f7fa;
 }
 .sidebar,
 .sidebar.ant-layout-sider {
