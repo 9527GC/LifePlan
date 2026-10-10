@@ -156,7 +156,7 @@ fn overlap_exists(
     let excluded = exclude_id.unwrap_or(-1);
     conn.query_row("SELECT start_time, end_time FROM daily_schedule_slots WHERE space_id = ?1 AND list_date = ?2 AND id != ?3 AND start_time < ?5 AND end_time > ?4 ORDER BY start_time LIMIT 1", params![space_id, list_date, excluded, start, end], |row| Ok((row.get(0)?, row.get(1)?))).optional()
 }
-fn ensure_day(conn: &Connection, list_date: &str) -> Result<(), String> {
+pub(crate) fn ensure_day(conn: &Connection, list_date: &str) -> Result<(), String> {
     validate_date(list_date)?;
     let space_id = current_space_id(conn).map_err(|error| error.to_string())?;
     let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM daily_schedule_days WHERE space_id = ?1 AND list_date = ?2)", params![space_id, list_date], |row| row.get(0)).map_err(|error| error.to_string())?;

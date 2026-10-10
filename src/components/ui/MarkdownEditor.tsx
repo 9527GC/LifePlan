@@ -140,7 +140,11 @@ export default function MarkdownEditor({
           >↷</button>
         </div>
       )}
-      <EditorContent editor={editor} />
+      <EditorContent
+        className="markdown-editor-content"
+        editor={editor}
+        onClick={() => editor?.chain().focus().run()}
+      />
     </div>
   );
 }

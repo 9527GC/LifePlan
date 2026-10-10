@@ -148,6 +148,10 @@ pub struct RecurringAction {
     pub priority: i32,
     pub frequency_unit: String,
     pub frequency_count: i32,
+    pub auto_schedule: i32,
+    pub schedule_type: String,
+    pub schedule_days: String,
+    pub start_time: String,
     pub sort_order: i64,
     pub created_at: i64,
     pub updated_at: i64,
@@ -162,6 +166,10 @@ pub struct NewRecurringAction {
     pub urgency: i32,
     pub frequency_unit: String,
     pub frequency_count: i32,
+    pub auto_schedule: i32,
+    pub schedule_type: String,
+    pub schedule_days: String,
+    pub start_time: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,6 +182,10 @@ pub struct UpdateRecurringAction {
     pub urgency: i32,
     pub frequency_unit: String,
     pub frequency_count: i32,
+    pub auto_schedule: i32,
+    pub schedule_type: String,
+    pub schedule_days: String,
+    pub start_time: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

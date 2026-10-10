@@ -51,6 +51,8 @@ export const recurringActionsApi = {
   delete: (recurringActionId: number) => invokeCommand<void>("delete_recurring_action", { recurringActionId }),
   reorder: (payload: ReorderRecurringActions) => invokeCommand<RecurringAction[]>("reorder_recurring_actions", { payload }),
   instantiate: (recurringActionId: number) => invokeCommand<Action>("create_action_from_recurring", { recurringActionId }),
+  initializeForDate: (listDate: string, triggerSource: "app_start" | "daily_review") =>
+    invokeCommand<void>("initialize_recurring_actions_for_date", { listDate, triggerSource }),
 };
 
 export const dailyListApi = {

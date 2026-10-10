@@ -364,7 +364,7 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
                  (space_id, sync_id, event_id, title, description, estimated_hours,
                   start_date, is_frog, importance, urgency, priority,
                   is_delegated_follow_up, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, 0, 0, 0, 1, 1, ?7, ?7)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, 0, 0, 0, ?7, 1, ?8, ?8)",
                 params![
                     space_id,
                     new_uuid(),
@@ -372,6 +372,9 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
                     action_title,
                     Option::<&str>::None,
                     follow_up_date,
+                    // 委托跟进行动同样根据自身的重要程度和紧急程度计算优先级。
+                    // 当前默认值为“不重要、不紧急”（0、0），因此应为 P4，而不是硬编码为 P1。
+                    calculate_priority(0, 0),
                     timestamp
                 ],
             )

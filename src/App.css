@@ -4623,6 +4623,33 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   height: 16px;
 }
 /* 每日复盘内容较长，滚动超过首屏后提供快速返回页首的入口。 */
+/* 自动保存固定在浮动操作按钮左侧，避免随页头滚出视口。 */
+.review-autosave-status {
+  position: fixed;
+  right: 84px;
+  bottom: 28px;
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 10px;
+  color: #60758d;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+  background: rgb(255 255 255 / 94%);
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgb(31 41 55 / 10%);
+  backdrop-filter: blur(8px);
+}
+.review-autosave-status.is-saved { color: #26845b; border-color: #cde8da; }
+.review-autosave-status.is-error { color: #c53b3b; border-color: #f1caca; background: rgb(255 248 248 / 96%); }
+.review-autosave-spinner { animation: review-autosave-spin 0.9s linear infinite; }
+@keyframes review-autosave-spin { to { transform: rotate(360deg); } }
+@media (max-width: 600px) { .review-autosave-status { right: 76px; } }
+
 
 .review-demo-header {
   display: flex;
@@ -6251,6 +6278,14 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   min-height: 0 !important;
   border: 0;
   border-radius: 0;
+}
+.markdown-editor.has-toolbar .markdown-editor-content {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.markdown-editor.has-toolbar .markdown-editor-content > .md-wysiwyg {
+  width: 100%;
 }
 .markdown-editor-toolbar {
   display: flex;

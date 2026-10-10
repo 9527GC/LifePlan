@@ -9,11 +9,12 @@ import {
 } from "antd";
 import DailyDatePicker from "@/components/ui/DailyDatePicker";
 import MarkdownEditor from "@/components/ui/MarkdownEditor";
-import { CalendarCheck, CircleAlert, RotateCcw } from "lucide-react";
+import { CalendarCheck, Check, CircleAlert, LoaderCircle, RotateCcw } from "lucide-react";
 import {
   dailyReviewApi,
   dailyScheduleApi,
   eventsApi,
+  recurringActionsApi,
 } from "@/lib/api";
 import {
   getDefaultDailyReviewStatus,
@@ -32,6 +33,7 @@ const localDate = (value = new Date()) => {
 };
 const today = () => localDate();
 const REVIEW_BACK_TOP_VISIBILITY_HEIGHT = 320;
+type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
 const nextDate = (date: string) => {
   const next = new Date(`${date}T12:00:00`);
   next.setDate(next.getDate() + 1);
@@ -75,7 +77,11 @@ export default function DailyReviewDemo() {
   const [loading, setLoading] = useState(true);
   const [reviewBlocked, setReviewBlocked] = useState(false);
   const [showBackTop, setShowBackTop] = useState(false);
+  const [draftSaveStatus, setDraftSaveStatus] = useState<DraftSaveStatus>("idle");
+  const [draftSavedAt, setDraftSavedAt] = useState("");
+  const [arrangingTomorrow, setArrangingTomorrow] = useState(false);
   const loadedDraftRef = useRef<string | null>(null);
+  const savedStatusTimerRef = useRef<number | null>(null);
   const [messageApi, contextHolder] = message.useMessage();
   const status = getDefaultDailyReviewStatus(schedule?.slots ?? []);
 
@@ -149,23 +155,35 @@ export default function DailyReviewDemo() {
     if (serializedDraft === loadedDraftRef.current) return;
 
     let cancelled = false;
+    if (savedStatusTimerRef.current != null) {
+      window.clearTimeout(savedStatusTimerRef.current);
+      savedStatusTimerRef.current = null;
+    }
+    setDraftSaveStatus("saving");
     const timer = window.setTimeout(() => {
       void dailyReviewApi
         .saveDraft(draft)
         .then(() => {
           if (cancelled) return;
           loadedDraftRef.current = serializedDraft;
-          messageApi.success({
-            key: "daily-review-draft-saved",
-            content: "草稿已保存",
-            duration: 1.5,
-          });
+          setDraftSavedAt(new Intl.DateTimeFormat("zh-CN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          }).format(new Date()));
+          setDraftSaveStatus("saved");
+          savedStatusTimerRef.current = window.setTimeout(() => {
+            setDraftSaveStatus("idle");
+            savedStatusTimerRef.current = null;
+          }, 3000);
         })
         .catch((error) => {
           if (cancelled) return;
-          messageApi.error(
-            `草稿保存失败：${String(error).replace(/^Error: /, "")}`,
-          );
+          setDraftSaveStatus("error");
+          messageApi.error({
+            key: "daily-review-draft-save-error",
+            content: `草稿保存失败：${String(error).replace(/^Error: /, "")}`,
+          });
         });
     }, 700);
     return () => {
@@ -179,8 +197,32 @@ export default function DailyReviewDemo() {
     data,
     loading,
   ]);
+  useEffect(() => () => {
+    if (savedStatusTimerRef.current != null) {
+      window.clearTimeout(savedStatusTimerRef.current);
+    }
+  }, []);
 
   const statusCopy = OVERALL_STATUS_COPY[status];
+
+  const arrangeTomorrow = async () => {
+    const tomorrow = nextDate(date);
+    setArrangingTomorrow(true);
+    try {
+      await recurringActionsApi.initializeForDate(tomorrow, "daily_review");
+      navigate("/daily-list", {
+        state: {
+          date: tomorrow,
+          showReviewSuggestions: true,
+          sourceReviewDate: date,
+        },
+      });
+    } catch (error) {
+      messageApi.error(`安排明日重复行动失败：${String(error).replace(/^Error: /, "")}`);
+    } finally {
+      setArrangingTomorrow(false);
+    }
+  };
 
   const plannedActionCount = data?.summary.planned_event_count || 0;
   const completedActionCount = data?.summary.completed_event_count || 0;
@@ -300,6 +342,7 @@ export default function DailyReviewDemo() {
     setSchedule(null);
     setReflection("");
     loadedDraftRef.current = null;
+    setDraftSaveStatus("idle");
     setDate(nextReviewDate);
   };
 
@@ -645,9 +688,8 @@ export default function DailyReviewDemo() {
                   <Button
                     type="primary"
                     disabled={inboxEvents.length > 0}
-                    onClick={() =>
-                      navigate("/daily-list", { state: { date: nextDate(date), showReviewSuggestions: true, sourceReviewDate: date } })
-                    }
+                    loading={arrangingTomorrow}
+                    onClick={() => void arrangeTomorrow()}
                   >
                     去安排明日计划
                   </Button>
@@ -666,6 +708,18 @@ export default function DailyReviewDemo() {
         </main>
       </div>
       <div className="review-page-bottom-spacer" aria-hidden="true" />
+      {draftSaveStatus !== "idle" && (
+        <div className={`review-autosave-status is-${draftSaveStatus}`} role="status" aria-live="polite">
+          {draftSaveStatus === "saving" && <LoaderCircle className="review-autosave-spinner" size={15} />}
+          {draftSaveStatus === "saved" && <Check size={15} />}
+          {draftSaveStatus === "error" && <CircleAlert size={15} />}
+          <span>
+            {draftSaveStatus === "saving" && "正在自动保存…"}
+            {draftSaveStatus === "saved" && `已自动保存 ${draftSavedAt}`}
+            {draftSaveStatus === "error" && "自动保存失败"}
+          </span>
+        </div>
+      )}
       {showBackTop ? (
         <FloatButton.Group
           shape="square"

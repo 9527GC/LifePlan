@@ -110,6 +110,7 @@ export type UpdateAction = Omit<NewAction, "event_id"> & { id: number };
 export interface ReorderEventActions { event_id: number; action_ids: number[] }
 
 export type RecurringFrequencyUnit = "daily" | "weekly" | "monthly";
+export type RecurringScheduleType = "daily" | "workday" | "weekly" | "monthly";
 export interface RecurringAction {
   id: number;
   title: string;
@@ -120,6 +121,10 @@ export interface RecurringAction {
   priority: number;
   frequency_unit: RecurringFrequencyUnit;
   frequency_count: number;
+  auto_schedule: number;
+  schedule_type: RecurringScheduleType;
+  schedule_days: string;
+  start_time: string;
   sort_order: number;
   created_at: number;
   updated_at: number;
@@ -132,6 +137,10 @@ export interface NewRecurringAction {
   urgency: number;
   frequency_unit: RecurringFrequencyUnit;
   frequency_count: number;
+  auto_schedule: number;
+  schedule_type: RecurringScheduleType;
+  schedule_days: string;
+  start_time: string;
 }
 export type UpdateRecurringAction = NewRecurringAction & { id: number };
 export interface ReorderRecurringActions { action_ids: number[] }

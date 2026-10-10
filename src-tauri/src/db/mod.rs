@@ -134,6 +134,12 @@ pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
             .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
         return Ok(true);
     }
+    if version == 20 {
+        ensure_recurring_schedule_schema(conn)?;
+        conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
+            .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+        return Ok(false);
+    }
     if version == 19 || version == 18 {
         migrate_daily_review(conn)?;
         return Ok(false);
@@ -202,9 +208,40 @@ fn ensure_daily_schedule_primary_review_reason_schema(conn: &Connection) -> Resu
     Ok(())
 }
 
+fn ensure_recurring_schedule_schema(conn: &Connection) -> Result<(), DbError> {
+    for (column, definition) in [
+        ("auto_schedule", "INTEGER NOT NULL DEFAULT 0"),
+        ("schedule_type", "TEXT NOT NULL DEFAULT 'daily'"),
+        ("schedule_days", "TEXT NOT NULL DEFAULT ''"),
+        ("start_time", "TEXT NOT NULL DEFAULT '08:30'"),
+    ] {
+        if !column_exists(conn, "recurring_actions", column)? {
+            conn.execute_batch(&format!(
+                "ALTER TABLE recurring_actions ADD COLUMN {column} {definition};"
+            ))
+            .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+        }
+    }
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS daily_recurring_initializations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+            list_date TEXT NOT NULL,
+            trigger_source TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            UNIQUE(space_id, list_date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_daily_recurring_initializations_space_date
+            ON daily_recurring_initializations(space_id, list_date);",
+    )
+    .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    Ok(())
+}
+
 fn migrate_daily_review(conn: &mut Connection) -> Result<(), DbError> {
     ensure_daily_review_schema(conn)?;
     ensure_daily_schedule_primary_review_reason_schema(conn)?;
+    ensure_recurring_schedule_schema(conn)?;
     conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
         .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
     Ok(())
@@ -217,6 +254,7 @@ fn migrate_add_delay_source_status(conn: &mut Connection) -> Result<(), DbError>
         )
         .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
     }
+    validate_current_schema(conn)?;
     conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
         .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
     Ok(())
@@ -236,6 +274,7 @@ fn migrate_add_quick_completion_marker(conn: &mut Connection) -> Result<(), DbEr
            AND NOT EXISTS (SELECT 1 FROM actions WHERE actions.event_id = events.id AND actions.deleted_at IS NULL);",
     )
     .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
+    validate_current_schema(conn)?;
     conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
         .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
     Ok(())
@@ -350,6 +389,7 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool, D
 fn validate_current_schema(conn: &Connection) -> Result<(), DbError> {
     ensure_daily_review_schema(conn)?;
     ensure_daily_schedule_primary_review_reason_schema(conn)?;
+    ensure_recurring_schedule_schema(conn)?;
     conn.execute_batch("CREATE TABLE IF NOT EXISTS daily_schedule_template_meta (space_id TEXT PRIMARY KEY REFERENCES local_spaces(space_id), updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS reward_checkins (id INTEGER PRIMARY KEY AUTOINCREMENT, space_id TEXT NOT NULL REFERENCES local_spaces(space_id), exchange_id INTEGER NOT NULL UNIQUE REFERENCES reward_exchanges(id) ON DELETE CASCADE, image_path TEXT, description TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL); CREATE INDEX IF NOT EXISTS idx_reward_checkins_space ON reward_checkins(space_id);")
         .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
     if !column_exists(conn, "events", "is_quick_completed")? {
@@ -407,6 +447,10 @@ fn validate_current_schema(conn: &Connection) -> Result<(), DbError> {
                 "priority",
                 "frequency_unit",
                 "frequency_count",
+                "auto_schedule",
+                "schedule_type",
+                "schedule_days",
+                "start_time",
                 "sort_order",
             ][..],
         ),
@@ -654,6 +698,69 @@ mod tests {
             .expect("读取数据库版本失败");
         assert_eq!(version, migrations::CURRENT_SCHEMA_VERSION);
         assert!(table_exists(&conn, "daily_reviews").expect("检查每日复盘表失败"));
+        validate_current_schema(&conn).expect("验证升级后的数据库结构失败");
+    }
+
+    #[test]
+    fn v20升级会补齐重复行动自动安排结构() {
+        let mut conn = Connection::open_in_memory().expect("创建内存数据库失败");
+        conn.execute_batch(migrations::INIT_MIGRATION)
+            .expect("初始化当前数据库结构失败");
+        conn.execute_batch(
+            "DROP TABLE daily_recurring_initializations;
+             ALTER TABLE recurring_actions DROP COLUMN auto_schedule;
+             ALTER TABLE recurring_actions DROP COLUMN schedule_type;
+             ALTER TABLE recurring_actions DROP COLUMN schedule_days;
+             ALTER TABLE recurring_actions DROP COLUMN start_time;
+             PRAGMA user_version = 20;",
+        )
+        .expect("构造 v20 数据库失败");
+        conn.execute_batch(
+            "INSERT INTO local_spaces (space_id, created_at, updated_at) VALUES ('legacy-space', 1, 1);
+             INSERT INTO recurring_actions (space_id, sync_id, title, estimated_hours, frequency_unit, frequency_count, created_at, updated_at)
+             VALUES ('legacy-space', 'legacy-template', '存量模板', 1.5, 'weekly', 3, 1, 1);",
+        )
+        .expect("创建存量模板失败");
+
+        run_migrations(&mut conn).expect("执行 v20 升级失败");
+
+        let version: i32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("读取数据库版本失败");
+        assert_eq!(version, migrations::CURRENT_SCHEMA_VERSION);
+        for column in [
+            "auto_schedule",
+            "schedule_type",
+            "schedule_days",
+            "start_time",
+        ] {
+            assert!(
+                column_exists(&conn, "recurring_actions", column).expect("检查重复行动字段失败")
+            );
+        }
+        assert!(table_exists(&conn, "daily_recurring_initializations")
+            .expect("检查自动安排初始化表失败"));
+        let legacy: (String, f64, String, i32, i32, String, String) = conn
+            .query_row(
+                "SELECT title, estimated_hours, frequency_unit, frequency_count, auto_schedule, schedule_type, start_time FROM recurring_actions WHERE sync_id = 'legacy-template'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
+            )
+            .expect("读取升级后存量模板失败");
+        assert_eq!(
+            legacy,
+            (
+                "存量模板".into(),
+                1.5,
+                "weekly".into(),
+                3,
+                0,
+                "daily".into(),
+                "08:30".into()
+            )
+        );
+        // 再次迁移不能改变存量模板或重复添加字段。
+        run_migrations(&mut conn).expect("重复迁移失败");
         validate_current_schema(&conn).expect("验证升级后的数据库结构失败");
     }
 }

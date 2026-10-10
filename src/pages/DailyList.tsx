@@ -5,11 +5,9 @@ import {
   Alert,
   Button,
   Checkbox,
-  DatePicker,
   Empty,
   Form,
   Input,
-  InputNumber,
   Modal as AntModal,
   Popconfirm,
   Select,
@@ -49,7 +47,6 @@ import type {
 } from "@/types";
 import { userFacingError } from "@/lib/errors";
 import DailyDatePicker from "@/components/ui/DailyDatePicker";
-import DatePickerWithWeekday from "@/components/ui/DatePickerWithWeekday";
 import FrogHelp from "@/components/ui/FrogHelp";
 import WorkLogModal from "@/components/ui/WorkLogModal";
 import { track } from "@/lib/analytics";
@@ -268,12 +265,17 @@ export default function DailyList() {
     setInsertPreset({ startTime: before.end_time, endTime });
   };
 
-  const openDailyReview = () => {
-    if (slots.every((slot) => slot.action_id == null)) {
+  const getSlotsWithSavedReview = (savedSlot?: DailyScheduleSlot) =>
+    savedSlot
+      ? slots.map((slot) => (slot.id === savedSlot.id ? savedSlot : slot))
+      : slots;
+  const openDailyReview = (savedSlot?: DailyScheduleSlot) => {
+    const latestSlots = getSlotsWithSavedReview(savedSlot);
+    if (latestSlots.every((slot) => slot.action_id == null)) {
       message.warning('请先安排行动后再进行今日复盘');
       return;
     }
-    const unreviewedSlots = slots.filter(
+    const unreviewedSlots = latestSlots.filter(
       (slot) => slot.action_id != null && !isSlotReviewed(slot),
     );
     if (unreviewedSlots.length > 0) {
@@ -285,7 +287,9 @@ export default function DailyList() {
     navigate("/daily-review", { state: { reviewDate: date } });
   };
   const promptDailyReviewAfterLastSlot = (savedSlot: DailyScheduleSlot) => {
-    const plannedSlots = slots.filter((slot) => slot.action_id != null);
+    const plannedSlots = getSlotsWithSavedReview(savedSlot).filter(
+      (slot) => slot.action_id != null,
+    );
     const isLastSlotReviewed =
       plannedSlots.length > 0 &&
       plannedSlots.every((slot) =>
@@ -297,7 +301,8 @@ export default function DailyList() {
       content: "要不要进行今日复盘，回顾今天并为明天做准备？",
       okText: "去复盘",
       cancelText: "稍后再说",
-      onOk: openDailyReview,
+      // 确认弹框会持有保存前的函数闭包，因此显式带上刚保存的时间段。
+      onOk: () => openDailyReview(savedSlot),
     });
   };
 
@@ -429,7 +434,7 @@ export default function DailyList() {
                 type="text"
                 className="daily-review-trigger"
                 icon={<DailyReviewIcon width={15} height={15} />}
-                onClick={openDailyReview}
+                onClick={() => openDailyReview()}
               >
                 今日复盘
               </Button>
@@ -1230,6 +1235,10 @@ function ActionPickerModal({
         urgency: payload.urgency,
         frequency_unit: payload.frequency_unit,
         frequency_count: payload.frequency_count,
+        auto_schedule: payload.auto_schedule,
+        schedule_type: payload.schedule_type,
+        schedule_days: payload.schedule_days,
+        start_time: payload.start_time,
       };
       const created = await recurringActionsApi.create(newPayload);
       setRecurringActions((current) => [...current, created]);
@@ -1339,97 +1348,98 @@ function ActionPickerModal({
         (selectableActions.length === 0 ? (
           <div className="daily-action-empty-guide">
             <div className="daily-action-empty-guide-icon">
-              <ListChecks size={30} strokeWidth={1.8} />
+          <ListChecks size={30} strokeWidth={1.8} />
             </div>
             <Typography.Title level={4}>
-              还没有可以直接安排的行动
+          还没有可以直接安排的行动
             </Typography.Title>
             <Typography.Paragraph>
-              先创建要做的事，再把事情拆解成一步步能马上开始的行动，然后依次安排到每天，会更容易将事情推进完成。
+          先创建要做的事，再把事情拆解成一步步能马上开始的行动，然后依次安排到每天，会更容易将事情推进完成。
             </Typography.Paragraph>
             <div className="daily-action-empty-guide-example">
-              <span>例如</span>
-              <span>准备汇报</span>
-              <ArrowRight size={14} />
-              <span>整理数据 → 写提纲 → 完成初稿</span>
+          <span>例如</span>
+          <span>准备汇报</span>
+          <ArrowRight size={14} />
+          <span>整理数据 → 写提纲 → 完成初稿</span>
             </div>
             <Button
-              type="primary"
-              icon={<ArrowRight size={15} />}
-              iconPosition="end"
-              onClick={onGuideToInbox}
+          type="primary"
+          icon={<ArrowRight size={15} />}
+          iconPosition="end"
+          onClick={onGuideToInbox}
             >
-              去事件篮拆分活动
+          去事件篮拆分活动
             </Button>
           </div>
         ) : (
           <>
             <div className="daily-picker-search-row">
-              <Input
-                allowClear
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索行动标题关键词"
-              />
-              <Button
-                type={actionView === "flat" ? "primary" : "default"}
-                ghost={actionView === "flat"}
-                size="middle"
-                icon={<Rows3 size={15} />}
-                aria-label="平铺视图"
-                title="平铺视图"
-                onClick={() => {
-                  setActionView("flat");
-                  localStorage.setItem(ACTION_VIEW_STORAGE_KEY, "flat");
-                }}
-              />
-              <Button
-                type={actionView === "event" ? "primary" : "default"}
-                ghost={actionView === "event"}
-                size="middle"
-                icon={<ListTree size={15} />}
-                aria-label="按事件视图"
-                title="按事件视图"
-                onClick={() => {
-                  setActionView("event");
-                  localStorage.setItem(ACTION_VIEW_STORAGE_KEY, "event");
-                }}
-              />
+          <Input
+            allowClear
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索行动标题关键词"
+          />
+          <Button
+            type={actionView === "flat" ? "primary" : "default"}
+            ghost={actionView === "flat"}
+            size="middle"
+            icon={<Rows3 size={15} />}
+            aria-label="平铺视图"
+            title="平铺视图"
+            onClick={() => {
+              setActionView("flat");
+              localStorage.setItem(ACTION_VIEW_STORAGE_KEY, "flat");
+            }}
+          />
+          <Button
+            type={actionView === "event" ? "primary" : "default"}
+            ghost={actionView === "event"}
+            size="middle"
+            icon={<ListTree size={15} />}
+            aria-label="按事件视图"
+            title="按事件视图"
+            onClick={() => {
+              setActionView("event");
+              localStorage.setItem(ACTION_VIEW_STORAGE_KEY, "event");
+            }}
+          />
             </div>
             <div
-              className={`daily-action-picker-list ${actionView === "event" ? "daily-action-picker-event-list" : ""}`}
+          className={`daily-action-picker-list ${actionView === "event" ? "daily-action-picker-event-list" : ""}`}
             >
-              {visibleActions.length === 0 ? (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="没有符合条件的行动"
+          {visibleActions.length === 0 ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description="没有符合条件的行动"
+            />
+          ) : actionView === "flat" ? (
+            flatVisibleActions.map((action, index) => (
+              <button
+                className={`daily-action-picker-item ${action.id === slot.action_id ? "selected" : ""}`}
+                type="button"
+                key={action.id}
+                onClick={() => void assign(action.id)}
+                disabled={saving}
+              >
+                <ActionPreview
+                  action={action}
+                  index={index + 1}
+                  hidePendingStatus
+                  scheduledToday={slots.some(
+                    (item) => item.action_id === action.id,
+                  )}
                 />
-              ) : actionView === "flat" ? (
-                flatVisibleActions.map((action, index) => (
-                  <button
-                    className={`daily-action-picker-item ${action.id === slot.action_id ? "selected" : ""}`}
-                    type="button"
-                    key={action.id}
-                    onClick={() => void assign(action.id)}
-                    disabled={saving}
-                  >
-                    <ActionPreview
-                      action={action}
-                      index={index + 1}
-                      scheduledToday={slots.some(
-                        (item) => item.action_id === action.id,
-                      )}
-                    />
-                  </button>
-                ))
-              ) : (
-                <EventActionPicker
-                  actions={visibleActions}
-                  slots={slots}
-                  saving={saving}
-                  onAssign={(id) => void assign(id)}
-                />
-              )}
+              </button>
+            ))
+          ) : (
+            <EventActionPicker
+              actions={visibleActions}
+              slots={slots}
+              saving={saving}
+              onAssign={(id) => void assign(id)}
+            />
+          )}
             </div>
           </>
         ))}
@@ -1437,90 +1447,90 @@ function ActionPickerModal({
         <>
           <div className="daily-picker-search-row">
             <Input
-              allowClear
-              value={recurringQuery}
-              onChange={(event) => setRecurringQuery(event.target.value)}
-              placeholder="搜索重复行动标题"
+          allowClear
+          value={recurringQuery}
+          onChange={(event) => setRecurringQuery(event.target.value)}
+          placeholder="搜索重复行动标题"
             />
             <Button
-              icon={<Plus size={15} />}
-              onClick={() => setMode("new-recurring")}
+          icon={<Plus size={15} />}
+          onClick={() => setMode("new-recurring")}
             >
-              新增重复行动
+          新增重复行动
             </Button>
           </div>
           <div className="daily-action-picker-list">
             {visibleRecurringActions.length === 0 ? (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  recurringActions.length === 0
-                    ? "还没有重复行动"
-                    : "没有符合条件的重复行动"
-                }
-              />
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              recurringActions.length === 0
+                ? "还没有重复行动"
+                : "没有符合条件的重复行动"
+            }
+          />
             ) : (
-              visibleRecurringActions.map((action, index) => {
-                const actualIndex = recurringActions.findIndex(
-                  (item) => item.id === action.id,
-                );
-                return (
-                  <div className="daily-recurring-picker-item" key={action.id}>
-                    <button
-                      className="daily-action-picker-item"
-                      type="button"
-                      onClick={() => void assignRecurring(action.id)}
-                      disabled={saving}
-                    >
-                      <RecurringActionPreview
-                        action={action}
-                        index={index + 1}
-                      />
-                    </button>
-                    <div className="daily-recurring-order-actions">
-                      <Button
-                        type="text"
-                        size="small"
-                        aria-label="编辑重复行动"
-                        title="编辑"
-                        icon={<Pencil size={15} />}
-                        disabled={saving}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setEditingRecurringAction(action);
-                          setMode("edit-recurring");
-                        }}
-                      />
-                      <Button
-                        type="text"
-                        size="small"
-                        aria-label="上移重复行动"
-                        title="上移"
-                        icon={<ChevronUp size={15} />}
-                        disabled={actualIndex === 0 || saving}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void moveRecurring(action.id, -1);
-                        }}
-                      />
-                      <Button
-                        type="text"
-                        size="small"
-                        aria-label="下移重复行动"
-                        title="下移"
-                        icon={<ChevronDown size={15} />}
-                        disabled={
-                          actualIndex === recurringActions.length - 1 || saving
-                        }
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void moveRecurring(action.id, 1);
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })
+          visibleRecurringActions.map((action, index) => {
+            const actualIndex = recurringActions.findIndex(
+              (item) => item.id === action.id,
+            );
+            return (
+              <div className="daily-recurring-picker-item" key={action.id}>
+                <button
+                  className="daily-action-picker-item"
+                  type="button"
+                  onClick={() => void assignRecurring(action.id)}
+                  disabled={saving}
+                >
+                  <RecurringActionPreview
+                    action={action}
+                    index={index + 1}
+                  />
+                </button>
+                <div className="daily-recurring-order-actions">
+                  <Button
+                    type="text"
+                    size="small"
+                    aria-label="编辑重复行动"
+                    title="编辑"
+                    icon={<Pencil size={15} />}
+                    disabled={saving}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setEditingRecurringAction(action);
+                      setMode("edit-recurring");
+                    }}
+                  />
+                  <Button
+                    type="text"
+                    size="small"
+                    aria-label="上移重复行动"
+                    title="上移"
+                    icon={<ChevronUp size={15} />}
+                    disabled={actualIndex === 0 || saving}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void moveRecurring(action.id, -1);
+                    }}
+                  />
+                  <Button
+                    type="text"
+                    size="small"
+                    aria-label="下移重复行动"
+                    title="下移"
+                    icon={<ChevronDown size={15} />}
+                    disabled={
+                      actualIndex === recurringActions.length - 1 || saving
+                    }
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void moveRecurring(action.id, 1);
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })
             )}
           </div>
         </>
@@ -1529,10 +1539,10 @@ function ActionPickerModal({
         <NewActionForm
           onSubmit={async (payload) => {
             try {
-              const action = await actionsApi.create(payload);
-              await assignAction(action);
+          const action = await actionsApi.create(payload);
+          await assignAction(action);
             } catch (cause) {
-              message.error(userFacingError(cause));
+          message.error(userFacingError(cause));
             }
           }}
         />
@@ -1562,32 +1572,32 @@ function ActionPickerModal({
         {(mode === "new-recurring" || mode === "edit-recurring") && (
           <>
             {mode === "edit-recurring" && (
-              <Popconfirm
-                title="删除后不可恢复，确认删除吗"
-                onConfirm={() => void deleteRecurring()}
-                okText="删除"
-                cancelText="取消"
-              >
-                <Button danger loading={saving}>
-                  删除
-                </Button>
-              </Popconfirm>
+          <Popconfirm
+            title="删除后不可恢复，确认删除吗"
+            onConfirm={() => void deleteRecurring()}
+            okText="删除"
+            cancelText="取消"
+          >
+            <Button danger loading={saving}>
+              删除
+            </Button>
+          </Popconfirm>
             )}
             <Button
-              onClick={() => {
-                setEditingRecurringAction(null);
-                setMode("recurring");
-              }}
+          onClick={() => {
+            setEditingRecurringAction(null);
+            setMode("recurring");
+          }}
             >
-              取消
+          取消
             </Button>
             <Button
-              type="primary"
-              form="daily-new-recurring-action-form"
-              htmlType="submit"
-              loading={saving}
+          type="primary"
+          form="daily-new-recurring-action-form"
+          htmlType="submit"
+          loading={saving}
             >
-              {mode === "edit-recurring" ? "保存修改" : "保存重复行动"}
+          {mode === "edit-recurring" ? "保存修改" : "保存重复行动"}
             </Button>
           </>
         )}
@@ -1717,10 +1727,10 @@ function DailySlotModal({
             rules={[{ required: true, message: "请选择是否达到预期" }]}
           >
             <Select
-              options={[
-                { value: 1, label: "达到预期" },
-                { value: 0, label: "未达预期" },
-              ]}
+          options={[
+            { value: 1, label: "达到预期" },
+            { value: 0, label: "未达预期" },
+          ]}
             />
           </Form.Item>
           <Form.Item
@@ -1729,10 +1739,10 @@ function DailySlotModal({
             rules={[{ required: true, message: "请选择是否专注" }]}
           >
             <Select
-              options={[
-                { value: 1, label: "专注" },
-                { value: 0, label: "没有专注" },
-              ]}
+          options={[
+            { value: 1, label: "专注" },
+            { value: 0, label: "没有专注" },
+          ]}
             />
           </Form.Item>
         </div>
@@ -1745,35 +1755,35 @@ function DailySlotModal({
         >
           {({ getFieldValue }) => {
             const shouldShowReasons =
-              getFieldValue("met_expectation") === 0 ||
-              getFieldValue("focused") === 0;
+          getFieldValue("met_expectation") === 0 ||
+          getFieldValue("focused") === 0;
             if (!shouldShowReasons) return null;
             return (
-              <Form.Item
-                name="primary_review_reason"
-                label="偏差主因"
-                rules={[{ required: true, message: "请选择偏差主因" }]}
-              >
-                <Radio.Group className="daily-slot-review-reasons">
-                  <Space direction="vertical" size={8}>
-                    {REVIEW_REASON_OPTIONS.map((option) => (
-                      <Radio key={option.value} value={option.value}>
-                        {option.label}
-                        <Tooltip title={option.description}>
-                          <button
-                            type="button"
-                            className="review-reason-help"
-                            aria-label={`${option.label}说明：${option.description}`}
-                            onClick={(event) => event.preventDefault()}
-                          >
-                            <CircleHelp size={14} aria-hidden="true" />
-                          </button>
-                        </Tooltip>
-                      </Radio>
-                    ))}
-                  </Space>
-                </Radio.Group>
-              </Form.Item>
+          <Form.Item
+            name="primary_review_reason"
+            label="偏差主因"
+            rules={[{ required: true, message: "请选择偏差主因" }]}
+          >
+            <Radio.Group className="daily-slot-review-reasons">
+              <Space direction="vertical" size={8}>
+                {REVIEW_REASON_OPTIONS.map((option) => (
+                  <Radio key={option.value} value={option.value}>
+                    {option.label}
+                    <Tooltip title={option.description}>
+                      <button
+                        type="button"
+                        className="review-reason-help"
+                        aria-label={`${option.label}说明：${option.description}`}
+                        onClick={(event) => event.preventDefault()}
+                      >
+                        <CircleHelp size={14} aria-hidden="true" />
+                      </button>
+                    </Tooltip>
+                  </Radio>
+                ))}
+              </Space>
+            </Radio.Group>
+          </Form.Item>
             );
           }}
         </Form.Item>
@@ -1781,31 +1791,31 @@ function DailySlotModal({
         <div className="daily-slot-actions">
           <Space>
             {slot.action?.status === 0 && (
-              <Checkbox
-                checked={completeAfterReview}
-                onChange={(event) =>
-                  setCompleteAfterReview(event.target.checked)
-                }
-              >
-                已完成行动
-              </Checkbox>
+          <Checkbox
+            checked={completeAfterReview}
+            onChange={(event) =>
+              setCompleteAfterReview(event.target.checked)
+            }
+          >
+            已完成行动
+          </Checkbox>
             )}
             {slot.action?.status === 1 && (
-              <Button
-                icon={<RotateCcw size={14} />}
-                onClick={() => void restore()}
-              >
-                恢复行动
-              </Button>
+          <Button
+            icon={<RotateCcw size={14} />}
+            onClick={() => void restore()}
+          >
+            恢复行动
+          </Button>
             )}
           </Space>
           <Space>
             <Button
-              type="primary"
-              onClick={() => void saveReview()}
-              loading={saving}
+          type="primary"
+          onClick={() => void saveReview()}
+          loading={saving}
             >
-              保存复盘
+          保存复盘
             </Button>
           </Space>
         </div>
@@ -1868,69 +1878,70 @@ function EventActionPicker({
         return (
           <section className="daily-event-action-group" key={group.key}>
             <button
-              type="button"
-              className="daily-event-action-parent"
-              aria-expanded={expanded}
-              onClick={() =>
-                setExpandedKeys((current) => {
-                  const next = new Set(current);
-                  if (next.has(group.key)) next.delete(group.key);
-                  else next.add(group.key);
-                  return next;
-                })
-              }
+          type="button"
+          className="daily-event-action-parent"
+          aria-expanded={expanded}
+          onClick={() =>
+            setExpandedKeys((current) => {
+              const next = new Set(current);
+              if (next.has(group.key)) next.delete(group.key);
+              else next.add(group.key);
+              return next;
+            })
+          }
             >
-              <span className="daily-event-action-parent-label">事件：</span>
-              <Typography.Text
-                strong
-                className="daily-event-action-parent-title"
-                ellipsis={{ tooltip: group.eventTitle }}
+          <span className="daily-event-action-parent-label">事件：</span>
+          <Typography.Text
+            strong
+            className="daily-event-action-parent-title"
+            ellipsis={{ tooltip: group.eventTitle }}
+          >
+            {group.eventTitle}
+          </Typography.Text>
+          {group.actions[0] && (
+            <span className="daily-event-action-parent-tags">
+              <Tag
+                color={
+                  group.actions[0].importance === 1 ? "orange" : "default"
+                }
               >
-                {group.eventTitle}
-              </Typography.Text>
-              {group.actions[0] && (
-                <span className="daily-event-action-parent-tags">
-                  <Tag
-                    color={
-                      group.actions[0].importance === 1 ? "orange" : "default"
-                    }
-                  >
-                    {group.actions[0].importance === 1 ? "重要" : "不重要"}
-                  </Tag>
-                  <Tag
-                    color={group.actions[0].urgency === 1 ? "red" : "default"}
-                  >
-                    {group.actions[0].urgency === 1 ? "紧急" : "不紧急"}
-                  </Tag>
-                </span>
-              )}
-              <span className="daily-event-action-count">
-                {group.actions.length}
-              </span>
-              {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                {group.actions[0].importance === 1 ? "重要" : "不重要"}
+              </Tag>
+              <Tag
+                color={group.actions[0].urgency === 1 ? "red" : "default"}
+              >
+                {group.actions[0].urgency === 1 ? "紧急" : "不紧急"}
+              </Tag>
+            </span>
+          )}
+          <span className="daily-event-action-count">
+            {group.actions.length}
+          </span>
+          {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
             {expanded && (
-              <div className="daily-event-action-children">
-                {group.actions.map((action, index) => (
-                  <button
-                    className={`daily-action-picker-item ${slots.some((item) => item.action_id === action.id) ? "selected" : ""}`}
-                    type="button"
-                    key={action.id}
-                    onClick={() => onAssign(action.id)}
-                    disabled={saving}
-                  >
-                    <ActionPreview
-                      action={action}
-                      index={index + 1}
-                      scheduledToday={slots.some(
-                        (item) => item.action_id === action.id,
-                      )}
-                      hideEventRelation
-                      hideEventActionMeta
-                    />
-                  </button>
-                ))}
-              </div>
+          <div className="daily-event-action-children">
+            {group.actions.map((action, index) => (
+              <button
+                className={`daily-action-picker-item ${slots.some((item) => item.action_id === action.id) ? "selected" : ""}`}
+                type="button"
+                key={action.id}
+                onClick={() => onAssign(action.id)}
+                disabled={saving}
+              >
+                <ActionPreview
+                  action={action}
+                  index={index + 1}
+                  hidePendingStatus
+                  scheduledToday={slots.some(
+                    (item) => item.action_id === action.id,
+                  )}
+                  hideEventRelation
+                  hideEventActionMeta
+                />
+              </button>
+            ))}
+          </div>
             )}
           </section>
         );
@@ -1944,12 +1955,14 @@ function ActionPreview({
   scheduledToday = false,
   hideEventRelation = false,
   hideEventActionMeta = false,
+  hidePendingStatus = false,
 }: {
   action: Action;
   index?: number;
   scheduledToday?: boolean;
   hideEventRelation?: boolean;
   hideEventActionMeta?: boolean;
+  hidePendingStatus?: boolean;
 }) {
   const relationLabel = action.event_title
     ? `所属事件：${action.event_title}`
@@ -1990,12 +2003,12 @@ function ActionPreview({
         <Tag
           color={
             action.estimated_hours <= 0.5
-              ? "blue"
-              : action.estimated_hours <= 1
-                ? "cyan"
-                : action.estimated_hours <= 1.5
-                  ? "orange"
-                  : "red"
+          ? "blue"
+          : action.estimated_hours <= 1
+            ? "cyan"
+            : action.estimated_hours <= 1.5
+              ? "orange"
+              : "red"
           }
         >
           {action.estimated_hours === 0.5
@@ -2005,35 +2018,25 @@ function ActionPreview({
         {hideEventActionMeta ? (
           <>
             {action.start_date && (
-              <Tag color="default">开始：{action.start_date}</Tag>
+          <Tag color="default">开始：{action.start_date}</Tag>
             )}
             {action.deadline && (
-              <Tag color="default">截止：{action.deadline}</Tag>
+          <Tag color="default">截止：{action.deadline}</Tag>
             )}
           </>
         ) : (
           <>
             <Tag color={action.importance === 1 ? "orange" : "default"}>
-              {action.importance === 1 ? "重要" : "不重要"}
+          {action.importance === 1 ? "重要" : "不重要"}
             </Tag>
             <Tag color={action.urgency === 1 ? "red" : "default"}>
-              {action.urgency === 1 ? "紧急" : "不紧急"}
+          {action.urgency === 1 ? "紧急" : "不紧急"}
             </Tag>
-            <Tag
-              color={
-                action.status === 1
-                  ? "green"
-                  : action.status === 2
-                    ? "red"
-                    : "blue"
-              }
-            >
-              {action.status === 1
-                ? "已完成"
-                : action.status === 2
-                  ? "已放弃"
-                  : "待办"}
-            </Tag>
+            {(!hidePendingStatus || action.status !== 0) && (
+              <Tag color={action.status === 1 ? "green" : action.status === 2 ? "red" : "blue"}>
+                {action.status === 1 ? "已完成" : action.status === 2 ? "已放弃" : "待办"}
+              </Tag>
+            )}
           </>
         )}
         {action.is_delegated_follow_up === 1 && (
@@ -2051,7 +2054,7 @@ function ActionPreview({
         <div className="daily-action-preview-event">
           <Tooltip title={eventLabel} {...tooltipProps}>
             <span className="daily-action-preview-event-text">
-              {eventLabel}
+          {eventLabel}
             </span>
           </Tooltip>
         </div>
@@ -2072,7 +2075,19 @@ function RecurringActionPreview({
   action: RecurringAction;
   index?: number;
 }) {
-  const frequencyLabel = `${action.frequency_unit === "daily" ? "每日" : action.frequency_unit === "weekly" ? "每周" : "每月"} ${action.frequency_count} 次`;
+  const scheduleDays = action.schedule_days
+    .split(",")
+    .filter(Boolean)
+    .map(Number);
+  const frequencyLabel = action.auto_schedule !== 1
+    ? "待设置重复规则"
+    : action.schedule_type === "daily"
+    ? `每天 ${action.start_time}`
+    : action.schedule_type === "workday"
+      ? `每个工作日 ${action.start_time}`
+      : action.schedule_type === "weekly"
+        ? `每周${scheduleDays.map((day) => "一二三四五六日"[day - 1]).join("、")} ${action.start_time}`
+        : `每月 ${scheduleDays.join("、")} 日 ${action.start_time}`;
   return (
     <div className="daily-action-preview">
       <div className="daily-action-preview-title">
@@ -2080,29 +2095,20 @@ function RecurringActionPreview({
         <span className="daily-action-preview-title-text">{action.title}</span>
       </div>
       <div className="daily-action-preview-tags">
-        <Tag color={priorityColor(action.priority)}>
-          优先级 P{action.priority}
-        </Tag>
         <Tag
           color={
             action.estimated_hours <= 0.5
-              ? "blue"
-              : action.estimated_hours <= 1
-                ? "cyan"
-                : action.estimated_hours <= 1.5
-                  ? "orange"
-                  : "red"
+          ? "blue"
+          : action.estimated_hours <= 1
+            ? "cyan"
+            : action.estimated_hours <= 1.5
+              ? "orange"
+              : "red"
           }
         >
           {action.estimated_hours === 0.5
             ? "30 分钟"
             : `${action.estimated_hours} 小时`}
-        </Tag>
-        <Tag color={action.importance === 1 ? "orange" : "default"}>
-          {action.importance === 1 ? "重要" : "不重要"}
-        </Tag>
-        <Tag color={action.urgency === 1 ? "red" : "default"}>
-          {action.urgency === 1 ? "紧急" : "不紧急"}
         </Tag>
         <Tag color="purple">{frequencyLabel}</Tag>
         {action.is_frog === 1 && <Tag color="green">青蛙</Tag>}
@@ -2121,6 +2127,7 @@ function NewRecurringActionForm({
   ) => Promise<void>;
 }) {
   const [form] = Form.useForm();
+  const scheduleType = Form.useWatch("schedule_type", form);
   useEffect(() => {
     form.setFieldsValue(
       action
@@ -2128,19 +2135,26 @@ function NewRecurringActionForm({
             title: action.title,
             estimated_hours: action.estimated_hours,
             is_frog: action.is_frog === 1,
-            importance: action.importance,
-            urgency: action.urgency,
             frequency_unit: action.frequency_unit,
             frequency_count: action.frequency_count,
+            schedule_type: action.schedule_type === "workday" ? "weekly" : action.schedule_type,
+            schedule_days: action.schedule_type === "workday"
+          ? [1, 2, 3, 4, 5]
+          : action.schedule_days
+              .split(",")
+              .filter(Boolean)
+              .map(Number),
+            start_time: action.start_time,
           }
         : {
             title: undefined,
             estimated_hours: 0.5,
             is_frog: false,
-            importance: 1,
-            urgency: 1,
             frequency_unit: "daily",
             frequency_count: 1,
+            schedule_type: "daily",
+            schedule_days: [],
+            start_time: "08:30",
           },
     );
   }, [action, form]);
@@ -2156,10 +2170,14 @@ function NewRecurringActionForm({
           title: String(values.title),
           estimated_hours: Number(values.estimated_hours),
           is_frog: values.is_frog ? 1 : 0,
-          importance: Number(values.importance),
-          urgency: Number(values.urgency),
-          frequency_unit: values.frequency_unit,
-          frequency_count: Number(values.frequency_count),
+          importance: 0,
+          urgency: 0,
+          frequency_unit: values.schedule_type,
+          frequency_count: 1,
+          auto_schedule: 1,
+          schedule_type: values.schedule_type,
+          schedule_days: (values.schedule_days ?? []).join(","),
+          start_time: values.start_time,
         })
       }
     >
@@ -2178,55 +2196,61 @@ function NewRecurringActionForm({
         >
           <Select
             options={[
-              { value: 0.5, label: "30 分钟" },
-              { value: 1, label: "1 小时" },
-              { value: 1.5, label: "1.5 小时" },
-              { value: 2, label: "2 小时" },
+          { value: 0.5, label: "30 分钟" },
+          { value: 1, label: "1 小时" },
+          { value: 1.5, label: "1.5 小时" },
+          { value: 2, label: "2 小时" },
             ]}
           />
         </Form.Item>
-        <Form.Item
-          name="frequency_unit"
-          label="频率"
-          rules={[{ required: true }]}
-        >
+        <Form.Item name="start_time" label="开始时间" rules={[{ required: true }]}>
           <Select
-            options={[
-              { value: "daily", label: "每日" },
-              { value: "weekly", label: "每周" },
-              { value: "monthly", label: "每月" },
-            ]}
+            options={HALF_HOUR_TIMES.map((time) => ({ value: time, label: time }))}
           />
         </Form.Item>
-        <Form.Item
-          name="frequency_count"
-          label="次数"
-          rules={[
-            { required: true, message: "请输入次数" },
-            { type: "number", min: 1, max: 99, message: "次数范围为 1～99" },
+      </div>
+      <Form.Item name="schedule_type" label="重复规则" rules={[{ required: true }]}>
+        <Radio.Group
+          optionType="button"
+          buttonStyle="solid"
+          onChange={() => form.setFieldValue("schedule_days", [])}
+          options={[
+            { value: "daily", label: "每天" },
+            { value: "weekly", label: "每周" },
+            { value: "monthly", label: "每月" },
           ]}
-        >
-          <InputNumber min={1} max={99} precision={0} className="full-width" />
-        </Form.Item>
-      </div>
-      <div className="form-grid action-priority-grid">
-        <Form.Item name="importance" label="重要程度">
-          <Select
-            options={[
-              { value: 1, label: "重要" },
-              { value: 0, label: "不重要" },
-            ]}
+            />
+          </Form.Item>
+          {scheduleType === "weekly" && (
+            <Form.Item
+          name="schedule_days"
+          label="每周执行日"
+          rules={[{ required: true, message: "请选择每周执行日" }]}
+            >
+          <Checkbox.Group
+            options={["一", "二", "三", "四", "五", "六", "日"].map((label, index) => ({
+              label: `周${label}`,
+              value: index + 1,
+            }))}
           />
-        </Form.Item>
-        <Form.Item name="urgency" label="紧急程度">
+            </Form.Item>
+          )}
+          {scheduleType === "monthly" && (
+            <Form.Item
+          name="schedule_days"
+          label="每月执行日"
+          rules={[{ required: true, message: "请选择每月执行日" }]}
+            >
           <Select
-            options={[
-              { value: 1, label: "紧急" },
-              { value: 0, label: "不紧急" },
-            ]}
+            mode="multiple"
+            placeholder="请选择日期"
+            options={Array.from({ length: 31 }, (_, index) => ({
+              value: index + 1,
+              label: `${index + 1} 日`,
+            }))}
           />
-        </Form.Item>
-      </div>
+            </Form.Item>
+          )}
       <Form.Item name="is_frog" valuePropName="checked">
         <Checkbox>
           标记为青蛙 <FrogHelp />
@@ -2252,12 +2276,6 @@ function NewActionForm({
         void onSubmit({
           title: String(values.title),
           estimated_hours: Number(values.estimated_hours),
-          start_date: values.start_date
-            ? (values.start_date as Dayjs).format("YYYY-MM-DD")
-            : undefined,
-          deadline: values.deadline
-            ? (values.deadline as Dayjs).format("YYYY-MM-DD")
-            : undefined,
           is_frog: values.is_frog ? 1 : 0,
           importance: Number(values.importance),
           urgency: Number(values.urgency),
@@ -2273,6 +2291,7 @@ function NewActionForm({
       </Form.Item>
       <div className="form-grid action-modal-grid">
         <Form.Item
+          className="full"
           name="estimated_hours"
           label="预计耗时"
           initialValue={0.5}
@@ -2286,12 +2305,6 @@ function NewActionForm({
               { value: 2, label: "2 小时" },
             ]}
           />
-        </Form.Item>
-        <Form.Item name="start_date" label="开始日期">
-          <DatePickerWithWeekday className="full-width" format="YYYY-MM-DD" />
-        </Form.Item>
-        <Form.Item name="deadline" label="截止日期">
-          <DatePicker className="full-width" format="YYYY-MM-DD" />
         </Form.Item>
       </div>
       <div className="form-grid action-priority-grid">

@@ -1,4 +1,4 @@
-pub const CURRENT_SCHEMA_VERSION: i32 = 20;
+pub const CURRENT_SCHEMA_VERSION: i32 = 21;
 
 pub const INIT_MIGRATION: &str = r#"
 PRAGMA foreign_keys = OFF;
@@ -172,11 +172,24 @@ CREATE TABLE IF NOT EXISTS recurring_actions (
     priority INTEGER NOT NULL DEFAULT 4,
     frequency_unit TEXT NOT NULL DEFAULT 'daily',
     frequency_count INTEGER NOT NULL DEFAULT 1,
+    auto_schedule INTEGER NOT NULL DEFAULT 0,
+    schedule_type TEXT NOT NULL DEFAULT 'daily',
+    schedule_days TEXT NOT NULL DEFAULT '',
+    start_time TEXT NOT NULL DEFAULT '08:30',
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_recurring_actions_space_order ON recurring_actions(space_id, deleted_at, sort_order, id);
+CREATE TABLE IF NOT EXISTS daily_recurring_initializations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+    list_date TEXT NOT NULL,
+    trigger_source TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(space_id, list_date)
+);
+CREATE INDEX IF NOT EXISTS idx_daily_recurring_initializations_space_date ON daily_recurring_initializations(space_id, list_date);
 CREATE TABLE IF NOT EXISTS daily_reviews (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     space_id TEXT NOT NULL REFERENCES local_spaces(space_id),

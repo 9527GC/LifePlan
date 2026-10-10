@@ -225,6 +225,7 @@ pub fn run() {
             recurring_actions::delete_recurring_action,
             recurring_actions::reorder_recurring_actions,
             recurring_actions::create_action_from_recurring,
+            recurring_actions::initialize_recurring_actions_for_date,
             system::get_startup_notice,
             system::retry_startup_backup,
             system::save_download_text_file,

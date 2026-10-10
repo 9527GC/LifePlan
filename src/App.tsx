@@ -33,7 +33,7 @@ import Pomodoro from "@/pages/Pomodoro";
 import FloatingPomodoro from "@/pages/FloatingPomodoro";
 import Rewards from "@/pages/Rewards";
 import DailyReviewDemo from "@/pages/DailyReviewDemo";
-import { eventsApi, systemApi } from "@/lib/api";
+import { eventsApi, recurringActionsApi, systemApi } from "@/lib/api";
 import type { StartupNotice } from "@/types";
 import { track } from "@/lib/analytics";
 import OnboardingCarousel from "@/components/ui/OnboardingCarousel";
@@ -64,6 +64,16 @@ export default function App() {
     if (isFloatingPomodoroWindow) return;
     track("应用启动");
     void systemApi.startupNotice().then(setNotice).catch((error) => setRetryError(String(error)));
+  }, [isFloatingPomodoroWindow]);
+
+  useEffect(() => {
+    if (isFloatingPomodoroWindow) return;
+    const now = new Date();
+    const timezoneOffset = now.getTimezoneOffset() * 60 * 1000;
+    const listDate = new Date(now.getTime() - timezoneOffset).toISOString().slice(0, 10);
+    void recurringActionsApi
+      .initializeForDate(listDate, "app_start")
+      .catch((error) => console.error("自动安排今日重复行动失败", error));
   }, [isFloatingPomodoroWindow]);
 
   useEffect(() => {
