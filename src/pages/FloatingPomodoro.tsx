@@ -46,6 +46,14 @@ export default function FloatingPomodoro() {
         } else if (hasLoadedRef.current && previousActive) {
           const records = await pomodoroApi.records(20);
           const finishedRecord = records.find((item) => item.id === previousActive.id);
+          if (finishedRecord?.status === 2) {
+            // 同步兜底：已中断的专注直接关闭悬浮窗口。
+            previousActiveRef.current = undefined;
+            setStatus(next);
+            setElapsedSeconds(0);
+            await closeFloatingWindow();
+            return;
+          }
           if (finishedRecord?.status === 1) {
             setCompletionResult({ points: finishedRecord.points_awarded, actionId: finishedRecord.action_id ?? undefined });
           }

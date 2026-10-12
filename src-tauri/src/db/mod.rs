@@ -186,6 +186,13 @@ fn run_base_migrations(conn: &mut Connection) -> Result<bool, DbError> {
 fn ensure_daily_review_schema(conn: &Connection) -> Result<(), DbError> {
     // 仅保证当前草稿复盘所需字段存在；不删除旧版本已落库的数据，避免升级时破坏用户数据。
     conn.execute_batch(r#"
+        CREATE TABLE IF NOT EXISTS work_logs (
+            space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
+            log_date TEXT NOT NULL,
+            content TEXT NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY(space_id, log_date)
+        );
         CREATE TABLE IF NOT EXISTS daily_reviews (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             space_id TEXT NOT NULL REFERENCES local_spaces(space_id),
@@ -425,6 +432,7 @@ fn validate_current_schema(conn: &Connection) -> Result<(), DbError> {
     )
     .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
     for (table, columns) in [
+        ("work_logs", &["space_id", "log_date", "content", "updated_at"][..]),
         (
             "daily_reviews",
             &[

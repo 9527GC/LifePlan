@@ -6,7 +6,7 @@ import { actionsApi, dailyScheduleApi, pomodoroApi } from "@/lib/api";
 import type { Action, DailyScheduleSlot, PomodoroRecord, PomodoroStatus } from "@/types";
 import { userFacingError } from "@/lib/errors";
 import { track } from "@/lib/analytics";
-import { isPomodoroFloatingWindowOpen, openPomodoroFloatingWindow, setFloatingPomodoroMode, showMainWindow } from "@/lib/pomodoroWindow";
+import { closePomodoroFloatingWindow, isPomodoroFloatingWindowOpen, openPomodoroFloatingWindow, setFloatingPomodoroMode, showMainWindow } from "@/lib/pomodoroWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listenPomodoroChanged, notifyPomodoroChanged } from "@/lib/pomodoroSync";
 import { clearPomodoroCompletion, consumePomodoroReviewRequest, getPomodoroCompletion, getPomodoroWindowMode, savePomodoroCompletion, setPomodoroWindowMode } from "@/lib/pomodoroSession";
@@ -225,6 +225,12 @@ export default function Pomodoro() {
         setCompletionResult({ points: completion.points, actionId: completion.actionId });
         notifyPomodoroChanged({ type: "completed", completion });
       } else {
+        clearPomodoroCompletion();
+        setCompletionResult(null);
+        setPomodoroWindowMode("main");
+        setWindowMode("main");
+        // 中断已经落库，关闭失败只提示窗口错误，不误报中断失败。
+        await closePomodoroFloatingWindow().catch((cause) => setError(userFacingError(cause)));
         notifyPomodoroChanged();
       }
       return true;

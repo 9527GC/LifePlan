@@ -2815,12 +2815,18 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   pointer-events: none;
 }
 
+/* 沿用原缺省态虚线边框，将图标与说明放在同一框内，避免图文分离。 */
 .work-log-empty {
-  margin: 28px 0;
-  padding: 28px 20px;
+  margin: 0;
+  padding: 24px 16px;
   border: 1px dashed #d9d9d9;
   border-radius: 8px;
   text-align: center;
+}
+.work-log-empty .ant-empty-description {
+  max-width: 480px;
+  margin: 0 auto;
+  line-height: 1.6;
 }
 .work-log-modal .ant-modal {
   top: 32px;
@@ -4650,14 +4656,14 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   font-size: 12px;
   line-height: 20px;
   white-space: nowrap;
-  background: rgb(255 255 255 / 94%);
-  border: 1px solid #dce5ef;
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 8px;
-  box-shadow: 0 4px 14px rgb(31 41 55 / 10%);
+  box-shadow: none;
   backdrop-filter: blur(8px);
 }
-.review-autosave-status.is-saved { color: #26845b; border-color: #cde8da; }
-.review-autosave-status.is-error { color: #c53b3b; border-color: #f1caca; background: rgb(255 248 248 / 96%); }
+.review-autosave-status.is-saved { color: #1677ff; }
+.review-autosave-status.is-error { color: #c53b3b; }
 .review-autosave-spinner { animation: review-autosave-spin 0.9s linear infinite; }
 @keyframes review-autosave-spin { to { transform: rotate(360deg); } }
 @media (max-width: 600px) { .review-autosave-status { right: 76px; } }
@@ -6347,6 +6353,31 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   line-height: 1.75;
 }
 
+/* 复盘编辑器不参与桌面栅格的高度计算，由左侧参考区决定高度，正文独立滚动。 */
+.review-reflection-input-fill .review-reflection-editor {
+  min-height: 0;
+}
+.review-reflection-input-fill .review-reflection-editor .markdown-editor-toolbar {
+  flex-shrink: 0;
+}
+.review-reflection-input-fill .review-reflection-editor .markdown-editor-content {
+  overflow: hidden;
+}
+.review-reflection-input-fill .review-reflection-editor .md-wysiwyg {
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+@media (min-width: 901px) {
+  .review-reflection-workspace .review-reflection-input-fill {
+    position: relative;
+    height: auto;
+    min-height: 0;
+  }
+  .review-reflection-input-fill .review-reflection-editor {
+    position: absolute;
+    inset: 0;
+  }
+}
 /* 第 1 步将完成概览与行动安排并列，减少纵向占用并保留两类信息的关联。 */
 .review-summary-workspace {
   display: grid;
@@ -7208,3 +7239,9 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   .review-equal-panel.is-collapsed .review-equal-viewport { -webkit-mask-image: none; mask-image: none; }
   .review-equal-actions { display: none; }
 }
+
+/* 工作日志提示放入底部操作栏，不再为编辑器额外预留空白。 */
+.work-log-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.work-log-save-feedback { min-width: 0; text-align: left; }
+.work-log-footer > .ant-space { margin-left: auto; }
+.work-log-footer .work-log-autosave-status { position: static; text-align: left; }

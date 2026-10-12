@@ -28,3 +28,5 @@ mod tests {
 }
 
 pub mod points;
+
+pub mod work_log;

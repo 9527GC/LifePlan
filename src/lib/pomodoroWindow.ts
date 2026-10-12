@@ -114,3 +114,12 @@ export const showMainWindow = async () => {
   await main.show();
   await main.setFocus();
 };
+
+// 主窗口直接关闭悬浮窗，不依赖悬浮窗口的事件监听。
+export const closePomodoroFloatingWindow = async () => {
+  if (!isTauriRuntime()) return;
+  const floating = await WebviewWindow.getByLabel(POMODORO_FLOATING_WINDOW_LABEL);
+  if (!floating) return;
+  await floating.close();
+  await showMainWindow();
+};

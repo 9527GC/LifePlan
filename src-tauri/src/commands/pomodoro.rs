@@ -2,7 +2,7 @@ use crate::db::{current_space_id, now_millis};
 use crate::models::{PomodoroRecord, PomodoroStatus};
 use crate::AppState;
 use rusqlite::{params, Connection, OptionalExtension};
-use tauri::State;
+use tauri::{Manager, State};
 
 const BLOCK_SECONDS: i64 = 30 * 60;
 
@@ -135,6 +135,7 @@ pub fn award_pomodoro_points(
 
 #[tauri::command]
 pub fn finish_pomodoro(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     record_id: i64,
     status: i32,
@@ -170,10 +171,27 @@ pub fn finish_pomodoro(
     }
     if award > 0 { super::points::record(&tx, &space, "focus", record_id, award as i64, end).map_err(|e| e.to_string())?; }
     tx.commit().map_err(|e| e.to_string())?;
-    Ok(PomodoroStatus {
+    let result = PomodoroStatus {
         active: None,
         total_points: points(&conn, &space).map_err(|e| e.to_string())?,
-    })
+    };
+    // 先释放数据库锁，再处理原生窗口，避免窗口事件触发读取时阻塞。
+    drop(conn);
+    if status == 2 {
+        // 中断后直接销毁悬浮窗口，不依赖 Webview 的关闭事件或前端消息。
+        if let Some(window) = app.get_webview_window("pomodoro-floating") {
+            if let Err(error) = window.destroy() {
+                eprintln!("中断后销毁悬浮番茄钟失败：{error}");
+                if let Err(error) = window.hide() {
+                    eprintln!("隐藏悬浮番茄钟失败：{error}");
+                }
+            }
+        }
+        if let Err(error) = crate::show_main_window(&app) {
+            eprintln!("中断后恢复主窗口失败：{error}");
+        }
+    }
+    Ok(result)
 }
 
 #[tauri::command]

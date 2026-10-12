@@ -1,6 +1,6 @@
 use crate::commands::{
     points, actions, analytics, daily_list, daily_review, daily_schedule, events, pomodoro,
-    recurring_actions, rewards, system,
+    recurring_actions, rewards, system, work_log,
 };
 use crate::db::init_db;
 pub use crate::db::AppState;
@@ -194,6 +194,8 @@ pub fn run() {
             daily_list::add_daily_list_item,
             daily_list::remove_daily_list_item,
             daily_list::reorder_daily_list,
+            work_log::get_work_log,
+            work_log::save_work_log,
             daily_review::get_daily_review,
             daily_review::save_daily_review_draft,
             daily_review::get_daily_review_suggestions,

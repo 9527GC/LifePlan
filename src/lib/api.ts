@@ -109,3 +109,8 @@ export const dailyReviewApi = {
 
 export interface PointsEntry { id: number; kind: string; content: string; amount: number; occurred_at: number; source_id?: number; historical: boolean }
 export const pointsApi = { list: (page = 1, kind?: string) => invokeCommand<{ entries: PointsEntry[]; total: number }>("get_points_ledger", { page, kind: kind ?? null }) };
+
+export const workLogApi = {
+  get: (date: string) => invokeCommand<string | null>("get_work_log", { date }),
+  save: (date: string, content: string, importOnly = false) => invokeCommand<void>("save_work_log", { date, content, importOnly }),
+};

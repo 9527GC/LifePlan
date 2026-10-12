@@ -570,6 +570,7 @@ export default function DailyList() {
       />
       {workLogOpen && (
         <WorkLogModal
+          key={date}
           date={date}
           slots={slots}
           onClose={() => setWorkLogOpen(false)}

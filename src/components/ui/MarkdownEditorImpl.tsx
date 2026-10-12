@@ -30,7 +30,10 @@ export default function MarkdownEditor({
   className,
 }: MarkdownEditorProps) {
   const latestRef = useRef(value);
-  latestRef.current = value;
+  // 此处保留编辑器实际内容，不能用外部值提前覆盖，否则同步判断始终相等。
+
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   const editor = useEditor({
     extensions: [
@@ -48,7 +51,7 @@ export default function MarkdownEditor({
     onUpdate: ({ editor }) => {
       const md = (editor.storage as any)?.markdown?.getMarkdown?.() as string ?? "";
       latestRef.current = md;
-      onChange(md);
+      onChangeRef.current(md);
     },
   });
 
@@ -56,7 +59,7 @@ export default function MarkdownEditor({
   useEffect(() => {
     if (!editor) return;
     if (value !== latestRef.current) {
-      latestRef.current = value;
+      // 此处保留编辑器实际内容，不能用外部值提前覆盖，否则同步判断始终相等。
       editor.commands.setContent(value || "", false);
     }
   }, [value, editor]);

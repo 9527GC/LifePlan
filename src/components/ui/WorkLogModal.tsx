@@ -3,6 +3,7 @@ import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import {
   Alert,
   Button,
+  Empty,
   Form,
   Input,
   Modal,
@@ -10,8 +11,9 @@ import {
   Typography,
   message,
 } from "antd";
-import { FileText, KeyRound, Settings } from "lucide-react";
+import { Check, CircleAlert, LoaderCircle, FileText, KeyRound, Settings } from "lucide-react";
 import MarkdownEditor from "@/components/ui/MarkdownEditor";
+import { workLogApi } from "@/lib/api";
 import type { DailyScheduleSlot } from "@/types";
 
 const API_KEY_STORAGE = "lifeplan-ai-api-key";
@@ -25,9 +27,13 @@ const WORK_LOG_STORAGE_PREFIX = "lifeplan-work-log-";
 const DEFAULT_API_URL = "https://api.openai.com/v1/chat/completions";
 const DEFAULT_MODEL = "gpt-5.6-luna";
 const DEFAULT_LOG_REQUIREMENTS = `1. 要求日志正文 150-250 字左右；
-2. 必须按照“所属项目或产品-行动”维度罗列，不要按照时间段维度罗列，一个行动算一个条目。不要出现“某个时间段安排了某件事”的描述，不用出现是否专注的描述；
+2. 必须按照“事件-行动”维度罗列，不要按照时间段维度罗列，一个行动算一个条目。不要出现“某个时间段安排了某件事”的描述，不用出现是否专注的描述；
+   例如
+   1.事件标题
+      1）行动1标题 行动状态
+      2）行动2标题 行动状态
 3. 统一使用“已完成、进行中、已取消或阻塞”等状态，未完成的算作进行中；
-4. 复盘记录中如有与计划事项不一致的实际工作情况，应如实补充说明；
+4. 复盘记录中如有与计划事项不一致的实际工作情况，计划事项如果为未完成则归为进行中，复盘内容为单独事项罗列；
 5. 下一工作日计划列出当日已安排但未完成的行动；
 6. 无待顺延事项时明确写“无待顺延行动”；
 7. 禁止推测或编造完成比例、时间、原因、成果等事实；
@@ -288,11 +294,24 @@ export default function WorkLogModal({
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [content, setContent] = useState(
-    () => localStorage.getItem(`${WORK_LOG_STORAGE_PREFIX}${date}`) || "",
-  );
+  const [content, setContent] = useState("");
+  const [logLoaded, setLogLoaded] = useState(false);
+  // 本次打开一旦展示编辑器，清空正文也保留输入入口；重新打开后重新判断。
+  const [editorVisible, setEditorVisible] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [savedAt, setSavedAt] = useState("");
+  const observedContentRef = useRef("");
+  const pendingRef = useRef<string | null>(null);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [aiError, setAiError] = useState<AiError | null>(null);
   const bodyHtmlRef = useRef<() => string>(() => "");
+  // 串行写入，防止较早的保存覆盖后续编辑。
+  const persistContent = (nextContent: string) => {
+    pendingRef.current = null;
+    const request = saveQueueRef.current.catch(() => {}).then(() => workLogApi.save(date, nextContent));
+    saveQueueRef.current = request;
+    return request;
+  };
   const copyRichLog = async () => {
     const { html, text } = buildRichClipboard(bodyHtmlRef.current());
     try {
@@ -324,7 +343,57 @@ export default function WorkLogModal({
     [slots],
   );
   useEffect(() => {
-    setContent(localStorage.getItem(`${WORK_LOG_STORAGE_PREFIX}${date}`) || "");
+    let cancelled = false;
+    void (async () => {
+      try {
+        // 按日期兼容旧记录，数据库已有内容时不覆盖，保留原缓存以便恢复。
+        let legacy: string | null = null;
+        try { legacy = localStorage.getItem(WORK_LOG_STORAGE_PREFIX + date); } catch {
+          // 浏览器缓存不可访问时仍允许读取数据库日志。
+        }
+        if (legacy !== null) await workLogApi.save(date, legacy, true);
+        const stored = await workLogApi.get(date);
+        if (cancelled) return;
+        observedContentRef.current = stored ?? "";
+        setContent(stored ?? "");
+        setEditorVisible(Boolean(stored?.trim()));
+        setLogLoaded(true);
+      } catch (error) {
+        if (cancelled) return;
+        setSaveStatus("error");
+        message.error("工作日志读取失败：" + String(error));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [date]);
+
+  useEffect(() => {
+    if (!logLoaded || content === observedContentRef.current) return;
+    observedContentRef.current = content;
+    pendingRef.current = content;
+    setSaveStatus("saving");
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void persistContent(content).then(() => {
+        if (cancelled) return;
+        setSavedAt(new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date()));
+        setSaveStatus("saved");
+      }).catch(() => { if (!cancelled) setSaveStatus("error"); });
+    }, 700);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [content, logLoaded, date]);
+
+  useEffect(() => {
+    if (saveStatus !== "saved") return;
+    const timer = window.setTimeout(() => setSaveStatus("idle"), 3000);
+    return () => window.clearTimeout(timer);
+  }, [saveStatus]);
+
+  // 关闭或切换日期时补交尚未触发的防抖写入。
+  useEffect(() => () => {
+    if (pendingRef.current !== null) {
+      void persistContent(pendingRef.current).catch(() => message.error("工作日志自动保存失败，请重新打开日志检查"));
+    }
   }, [date]);
   useEffect(() => {
     if (!apiKey) setSettingsOpen(true);
@@ -400,7 +469,8 @@ export default function WorkLogModal({
         logRequirements.trim() || DEFAULT_LOG_REQUIREMENTS,
       );
       setContent(nextContent);
-      localStorage.setItem(`${WORK_LOG_STORAGE_PREFIX}${date}`, nextContent);
+      setEditorVisible(Boolean(nextContent.trim()));
+
     } catch (cause) {
       const error = cause as AiError;
       const normalized = error?.summary
@@ -432,32 +502,45 @@ export default function WorkLogModal({
         onCancel={onClose}
         destroyOnHidden
         footer={
-          <Space>
-            <Button
-              icon={<Settings size={15} />}
-              onClick={() => setSettingsOpen(true)}
-            >
-              AI 配置
-            </Button>
-            <Button onClick={onClose}>关闭</Button>
-            {content && (
+          <div className="work-log-footer">
+            <div className="work-log-save-feedback">
+              {saveStatus !== "idle" && (
+                <div className={"review-autosave-status work-log-autosave-status is-" + saveStatus} role="status" aria-live="polite">
+                  {saveStatus === "saving" && <LoaderCircle className="review-autosave-spinner" size={15} />}
+                  {saveStatus === "saved" && <Check size={15} />}
+                  {saveStatus === "error" && <CircleAlert size={15} />}
+                  <span>{saveStatus === "saving" ? "正在自动保存…" : saveStatus === "saved" ? "已自动保存 " + savedAt : "自动保存失败"}</span>
+                </div>
+              )}
+            </div>
+            <Space>
+              <Button
+                icon={<Settings size={15} />}
+                onClick={() => setSettingsOpen(true)}
+              >
+                AI 配置
+              </Button>
+
               <Button
                 type="primary"
-                onClick={() => {
-                  void copyRichLog();
-                }}
+                disabled={!logLoaded}
+                loading={generating}
+                onClick={() => void generate()}
               >
-                复制日志
+                {content ? "重新生成" : "生成工作日志"}
               </Button>
-            )}
-            <Button
-              type="primary"
-              loading={generating}
-              onClick={() => void generate()}
-            >
-              {content ? "重新生成" : "生成工作日志"}
-            </Button>
-          </Space>
+              {content && (
+                <Button
+                  type="primary"
+                  onClick={() => {
+                    void copyRichLog();
+                  }}
+                >
+                  复制日志
+                </Button>
+              )}
+            </Space>
+          </div>
         }
       >
         <div className="work-log-meta">
@@ -514,22 +597,31 @@ export default function WorkLogModal({
             onClose={() => setAiError(null)}
           />
         )}
-        {content ? (
-          <MarkdownEditor
-            value={content}
-            minHeight={220}
-            maxHeight={360}
-            getHtmlRef={bodyHtmlRef}
-            onChange={(md) => {
-              setContent(md);
-              localStorage.setItem(`${WORK_LOG_STORAGE_PREFIX}${date}`, md);
-            }}
-          />
+        {!logLoaded ? (
+          <Typography.Text type="secondary">正在读取工作日志…</Typography.Text>
         ) : (
-          <Typography.Paragraph type="secondary" className="work-log-empty">
-            点击“生成工作日志”，AI
-            会根据当天每个时间段的行动与复盘，按指定模板整理成一份日志。
-          </Typography.Paragraph>
+          <div className="work-log-editor-area">
+            {editorVisible ? (
+              <MarkdownEditor
+                key={date}
+                value={content}
+                minHeight={220}
+                maxHeight={360}
+                getHtmlRef={bodyHtmlRef}
+                onChange={setContent}
+              />
+            ) : (
+              <Empty
+                className="work-log-empty"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  <Typography.Text type="secondary">
+                    点击“生成工作日志”，AI 会根据当天的行动与复盘，按指定模板整理成一份日志。
+                  </Typography.Text>
+                }
+              />
+            )}
+          </div>
         )}
       </Modal>
       <Modal
@@ -617,7 +709,7 @@ export default function WorkLogModal({
             <Input.TextArea
               value={logRequirements}
               onChange={(event) => setLogRequirements(event.target.value)}
-              autoSize={{ minRows: 5, maxRows: 12 }}
+              autoSize={{ minRows: 5 }}
             />
           </Form.Item>
         </Form>
