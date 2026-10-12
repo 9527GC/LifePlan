@@ -55,7 +55,8 @@ export default function ReviewPriorityChart({ quadrants }: { quadrants: Quadrant
         stillShowZeroSum: false,
         itemStyle: { borderRadius: 8, borderColor: "#fff", borderWidth: 2 },
         label: { show: false }, labelLine: { show: false },
-        emphasis: { scale: true, scaleSize: 5, label: { show: true, position: "center", fontSize: 16, fontWeight: "bold", color: "#25324b", formatter: "{b}" } },
+        // 悬停只显示详细提示框，不额外显示扇区标题。
+        emphasis: { scale: true, scaleSize: 5, label: { show: false }, labelLine: { show: false } },
         data: quadrants.map(item => ({ name: item.name, value: item.minutes })),
       }],
     };

@@ -11,6 +11,7 @@ import DailyDatePicker from "@/components/ui/DailyDatePicker";
 import MarkdownEditor from "@/components/ui/MarkdownEditor";
 import TodayFocus from "@/components/TodayFocus";
 import ReviewPriorityChart from "@/components/ReviewPriorityChart";
+import ReviewEqualHeight from "@/components/ReviewEqualHeight";
 import { CalendarCheck, Check, CircleAlert, LoaderCircle, RotateCcw } from "lucide-react";
 import {
   dailyReviewApi,
@@ -37,6 +38,26 @@ const localDate = (value = new Date()) => {
 };
 const today = () => localDate();
 const REVIEW_BACK_TOP_VISIBILITY_HEIGHT = 320;
+// 空白复盘默认填入提纲，已有复盘内容保持不变。
+const DEFAULT_REFLECTION_TEMPLATE = [
+  "**今天都做了什么，推进了哪些重要的事**",
+  "",
+  "1. ",
+  "2. ",
+  "",
+  "**对哪些比较满意，那些不满意**",
+  "",
+  "1. ",
+  "2. ",
+  "",
+  "**有什么收获？**",
+  "",
+  "1. ",
+  "",
+  "**明天的规划是什么**",
+  "",
+  "1. ",
+].join("\n");
 type DraftSaveStatus = "idle" | "saving" | "saved" | "error";
 const nextDate = (date: string) => {
   const next = new Date(`${date}T12:00:00`);
@@ -128,7 +149,7 @@ export default function DailyReviewDemo() {
       setFocusRecords(dayFocusRecords);
       setActionScheduleDates(nextActionScheduleDates);
       setInboxEvents(events.filter((event) => event.status === 0));
-      setReflection(review.review.reflection_text || "");
+      setReflection(review.review.reflection_text?.trim() ? review.review.reflection_text : DEFAULT_REFLECTION_TEMPLATE);
       loadedDraftRef.current = serializeDraft({
         review_date: reviewDate,
         overall_status: getDefaultDailyReviewStatus(daySchedule.slots),
@@ -458,7 +479,7 @@ export default function DailyReviewDemo() {
                 </div>
               </div>
             </div>
-            <div className="review-execution-focus-grid">
+            <ReviewEqualHeight key={date}>
             <div className="review-execution-trace">
               <div className="review-execution-trace-heading">
                 <div>
@@ -558,10 +579,10 @@ export default function DailyReviewDemo() {
                 </div>
               </div>
               <div className="review-focus-body">
-                <TodayFocus key={date} recordOrder="asc" fitHeight records={focusRecords} slots={schedule?.slots ?? []} now={date === localDate(new Date(clock)) ? clock : new Date(`${date}T23:59:59.999`).getTime()} />
+                <TodayFocus key={date} recordOrder="asc" records={focusRecords} slots={schedule?.slots ?? []} now={date === localDate(new Date(clock)) ? clock : new Date(`${date}T23:59:59.999`).getTime()} />
               </div>
             </section>
-            </div>
+            </ReviewEqualHeight>
             <div className="review-slot-summary" aria-label="当天时间段复盘汇总与整体状态">
               <div className="review-slot-summary-heading">
                 <div>

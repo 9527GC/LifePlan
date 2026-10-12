@@ -6684,7 +6684,7 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
 /* 仅设置积分文案颜色，避免覆盖 Ant Design 按钮内部的文字颜色。 */
 .pomodoro-floating-completion > span { color: #d48806; font-size: 14px; }
 .pomodoro-floating-completion-actions { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; }
-.pomodoro-floating-completion-actions .ant-btn { min-width: 96px; height: 34px; padding-inline: 10px; border-radius: 9px; }
+.pomodoro-floating-completion-actions .ant-btn { min-width: 80px; height: 34px; padding-inline: 8px; border-radius: 9px; }
 .pomodoro-floating-completion-actions .ant-btn-primary,
 .pomodoro-floating-completion-actions .ant-btn-primary > span { color: #fff; }
 .pomodoro-floating-error { margin: 8px 10px 0; }
@@ -7192,4 +7192,19 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
 .reward-card-more.ant-btn:focus-visible {
   color: #595959;
   background: rgba(0, 0, 0, 0.04);
+}/* 两侧按较低的自然高度统一展示，较高侧渐隐并支持展开。 */
+.review-equal-grid { align-items: start; }
+.review-equal-panel { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid #e4ebf4; border-radius: 12px; background: linear-gradient(180deg, #fff 0%, #fafcff 100%); }
+.review-equal-viewport { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.review-equal-content > .review-execution-trace,
+.review-equal-content > .review-focus-distribution { display: flex; flex-direction: column; contain: none; min-height: 0; margin: 0; padding: 18px 20px 12px; border: 0; border-radius: 0; background: transparent; }
+.review-equal-content .review-focus-body { display: block; overflow: visible; }
+.review-equal-panel.is-collapsed .review-equal-viewport { -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 calc(100% - 48px), transparent 100%); mask-image: linear-gradient(to bottom, #000 0%, #000 calc(100% - 48px), transparent 100%); }
+.review-equal-actions { display: flex; justify-content: center; flex-shrink: 0; padding: 0 20px 8px; }
+.review-equal-actions .ant-btn { display: inline-flex; align-items: center; gap: 6px; color: #6383ac; border-radius: 16px; }
+.review-equal-actions .ant-btn:hover { color: #1677ff; background: rgba(22, 119, 255, 0.06) !important; }
+@media (max-width: 900px) {
+  .review-equal-panel { height: auto !important; }
+  .review-equal-panel.is-collapsed .review-equal-viewport { -webkit-mask-image: none; mask-image: none; }
+  .review-equal-actions { display: none; }
 }
