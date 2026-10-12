@@ -41,6 +41,10 @@ CHANGELOG 与 Release 说明由脚本从提交自动归一化生成，请让每�
 - 预发布标签请用 `vX.Y.Z-rc.N` 命名；正式版的更新日志会自动以上一个**正式版**为基线，不会因预发布标签而漏掉期间内容。
 
 
+## 界面开发规范
+
+新增或调整状态颜色遵循 [界面颜色规范](docs/ui-color-guidelines.md)，复用主题令牌与已有语义；新增功能同步更新 README、产品说明和专项文档。普通弹框沿用 src/App.css 通用自适应高度规则。
+
 ## 发布流程
 
 1. 确认三处版本号一致：`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`。
