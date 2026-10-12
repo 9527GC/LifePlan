@@ -178,6 +178,7 @@ pub fn exchange_reward(
     let now = now_millis();
     tx.execute("UPDATE user_points SET total_points = total_points - ?1, updated_at = ?2 WHERE space_id = ?3", params![cost, now, &space]).map_err(|error| error.to_string())?;
     tx.execute("INSERT INTO reward_exchanges (space_id, reward_id, points_used, exchanged_at, created_at) VALUES (?1, ?2, ?3, ?4, ?4)", params![&space, reward_id, cost, now]).map_err(|error| error.to_string())?;
+    super::points::record(&tx, &space, "exchange", tx.last_insert_rowid(), -cost, now).map_err(|e| e.to_string())?;
     tx.commit().map_err(|error| error.to_string())?;
     overview(&conn, &space).map_err(|error| error.to_string())
 }

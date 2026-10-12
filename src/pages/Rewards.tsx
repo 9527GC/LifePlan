@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type ClipboardEvent } from "react";
 import { Alert, Button, Card, Empty, Form, Input, InputNumber, Modal, Pagination, Popconfirm, Space, Spin, Tag, Typography, message } from "antd";
-import { Camera, Eye, Gift, History, ImagePlus, Pencil, Plus, Share2, ShoppingBag, Trash2 } from "lucide-react";
+import { Camera, ChevronRight, Eye, Gift, History, ImagePlus, Pencil, Plus, Share2, ShoppingBag, Trash2 } from "lucide-react";
 import QRCode from "qrcode";
 import { rewardsApi } from "@/lib/api";
 import type { NewReward, Reward, RewardCheckin, RewardExchange, RewardsOverview } from "@/types";
 import { userFacingError } from "@/lib/errors";
 import { showSavedToast } from "@/lib/savedToast";
 import { track } from "@/lib/analytics";
+
+import PointsLedger from "@/components/PointsLedger";
 
 type RewardFormValues = NewReward;
 
@@ -322,6 +324,7 @@ function PosterModal({ open, checkin, onClose }: { open: boolean; checkin: Rewar
 }
 
 export default function Rewards() {
+  const [ledgerOpen, setLedgerOpen] = useState(false);
   const [data, setData] = useState<RewardsOverview>({ total_points: 0, rewards: [], exchanges: [] });
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
@@ -404,7 +407,7 @@ export default function Rewards() {
   return <div className="page rewards-page">
     <header className="page-header">
       <div><Typography.Title level={2} className="page-title">奖励池</Typography.Title><Typography.Paragraph className="page-subtitle">把积分换成真正期待的奖励，让坚持变得有回报。</Typography.Paragraph></div>
-      <div className="rewards-header-actions"><Button type="primary" icon={<Plus size={15} />} onClick={() => showForm()}>添加奖励</Button><div className="rewards-balance"><Gift size={20} />{data.total_points}<span>积分</span></div></div>
+      <div className="rewards-header-actions"><Button type="primary" icon={<Plus size={15} />} onClick={() => showForm()}>添加奖励</Button><div className="rewards-balance pomodoro-rewards-link" role="button" tabIndex={0} aria-label="查看积分流水" onClick={() => setLedgerOpen(true)} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setLedgerOpen(true); } }}><Gift size={18} aria-hidden="true" />{data.total_points}<span>积分</span><ChevronRight className="pomodoro-points-chevron" size={14} aria-hidden="true" /></div></div>
     </header>
     {error && <Alert className="page-alert" type="error" showIcon message={error} closable onClose={() => setError("")} />}
     <div className="reward-grid">
@@ -427,6 +430,7 @@ export default function Rewards() {
         <Pagination className="exchange-pagination" current={exchangePage} pageSize={10} total={data.exchanges.length} hideOnSinglePage showSizeChanger={false} onChange={setExchangePage} />
       </>}
     </Card>
+    <PointsLedger open={ledgerOpen} onClose={() => setLedgerOpen(false)} balance={data.total_points} />
     <Modal title={editing ? "编辑奖励" : "添加奖励"} open={open} onCancel={() => setOpen(false)} footer={null} destroyOnHidden>
       <Form form={form} layout="vertical" onFinish={(values) => void save(values)}>
         <Form.Item name="name" label="奖励名称" rules={[{ required: true, message: "请输入奖励名称" }]}><Input placeholder="例如：看一集喜欢的剧" /></Form.Item>

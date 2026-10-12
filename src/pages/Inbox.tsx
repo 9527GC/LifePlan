@@ -1704,6 +1704,7 @@ function ProcessModal({
           ) : mode === "delay" ? (
             <div className="form-grid">
               <Form.Item
+                className="full delay-date-field"
                 name="delay_until"
                 label="重新处理日期"
                 extra="将在所选日期的前一天 17:00 自动恢复，便于提前安排行动；不选日期则仅手动恢复。"

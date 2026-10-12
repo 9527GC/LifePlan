@@ -123,6 +123,7 @@ pub(crate) fn award_event_completion_tx(
         params![award, event_id, space_id],
     )
     .map_err(|error| error.to_string())?;
+    super::points::record(tx, space_id, "event", event_id, award, now).map_err(|e| e.to_string())?;
     Ok(award)
 }
 
@@ -145,6 +146,7 @@ pub(crate) fn revoke_event_completion_tx(
     if already <= 0 {
         return Ok(0);
     }
+    let balance: i64 = tx.query_row("SELECT COALESCE(total_points,0) FROM user_points WHERE space_id=?1", [space_id], |r| r.get(0)).optional().map_err(|e| e.to_string())?.unwrap_or(0);
     let now = now_millis();
     tx.execute(
         "INSERT INTO user_points (space_id, total_points, updated_at) VALUES (?1, 0, ?2) ON CONFLICT(space_id) DO UPDATE SET total_points = MAX(user_points.total_points - ?3, 0), updated_at = excluded.updated_at",
@@ -156,6 +158,7 @@ pub(crate) fn revoke_event_completion_tx(
         params![event_id, space_id],
     )
     .map_err(|error| error.to_string())?;
+    super::points::record(tx, space_id, "revoke", event_id, -already.min(balance), now).map_err(|e| e.to_string())?;
     Ok(already)
 }
 

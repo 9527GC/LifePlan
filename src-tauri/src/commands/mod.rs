@@ -26,3 +26,5 @@ mod tests {
         assert_eq!(calculate_priority(0, 0), 4);
     }
 }
+
+pub mod points;

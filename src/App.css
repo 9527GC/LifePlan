@@ -1111,6 +1111,9 @@ body.pomodoro-floating-mode .app-shell {
 .form-grid .full {
   grid-column: 1 / -1;
 }
+.delay-date-field .ant-form-item-extra {
+  white-space: nowrap;
+}
 .action-modal-grid {
   grid-template-columns: 1fr 1fr;
 }
@@ -2113,6 +2116,8 @@ body.pomodoro-floating-mode .app-shell {
   font-weight: 400;
 }
 .pomodoro-rewards-link {
+  padding: 4px 12px;
+  line-height: 24px;
   cursor: pointer;
   transition:
     background-color 0.2s ease,
@@ -6565,7 +6570,7 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
 /* 通用弹框高度：内容较少时按实际高度展示，内容超出可视区域时才保留上下安全边距并在正文区域滚动。 */
 .ant-modal-wrap {
   inset: 0 !important;
-  display: flex !important;
+  display: flex;
   box-sizing: border-box !important;
   height: 100vh !important;
   height: 100dvh !important;
@@ -6882,4 +6887,207 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
 @keyframes loading-label-appear { to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .loading-state-label { animation: none; opacity: 1; }
+}
+
+/* 今日专注正文统一滚动，积分流水复用通用弹框正文滚动。 */
+.today-focus { display: flex; flex-direction: column; min-height: 0; flex: 1; gap: 14px; }
+/* 用轻量指标卡区分统计含义，图例颜色与实际时间轴保持一致。 */
+.today-focus-date { display: inline-flex; align-items: center; gap: 6px; color: #8c96a5; font-size: 12px; font-weight: 400; }
+.today-focus-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; flex: 0 0 auto; margin: 4px 0 6px; }
+.today-focus-metric { min-width: 0; padding: 14px 14px 12px; border: 1px solid transparent; border-radius: 12px; }
+.today-focus-metric-label { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 20px; white-space: nowrap; }
+.today-focus-metric-label svg { flex-shrink: 0; opacity: .85; }
+.today-focus-metric-value { display: flex; align-items: baseline; gap: 5px; margin-top: 7px; }
+.today-focus-metric-value strong { color: inherit; font-size: 28px; font-weight: 650; line-height: 34px; letter-spacing: -.8px; font-variant-numeric: tabular-nums; }
+.today-focus-metric-value > span { color: #8a94a3; font-size: 12px; }
+.today-focus-distribution-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: 0 0 auto; margin-top: 2px; }
+.today-focus-distribution-title { color: #596579; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.today-focus-legend { display: flex; align-items: center; gap: 14px; font-size: 11px; color: #8c96a5; }
+.today-focus-legend > span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.today-focus-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.today-focus-dot--work { background: var(--focus-work-color); }
+.today-focus-dot--rest { background: var(--focus-rest-color); }
+.today-focus-dot--interrupted { background: var(--focus-interrupted-color); }
+.today-focus-ticks { display: flex; justify-content: space-between; gap: 8px; flex: 0 0 auto; font-size: 11px; color: #929bab; font-variant-numeric: tabular-nums; }
+@media (max-width: 1100px) {
+  .today-focus-summary { gap: 6px; }
+  .today-focus-metric { padding: 11px 9px; border-radius: 9px; }
+  .today-focus-metric-label { gap: 4px; font-size: 11px; }
+  .today-focus-metric-value strong { font-size: 24px; }
+  .today-focus-legend { gap: 9px; }
+}
+.today-focus-track { position: relative; height: 36px; background: #fafafa; border: 1px solid #f0f0f0; border-radius: 6px; flex: 0 0 auto; }
+.focus-segment { position: absolute; top: 4px; height: 26px; padding: 0; background: var(--focus-work-color); border: 0; cursor: pointer; min-width: 2px; }
+.focus-segment.rest { background: var(--focus-rest-color); }
+.focus-end { position: absolute; top: 0; width: 3px; height: 34px; z-index: 1; }
+.focus-end.interrupted { background: var(--focus-interrupted-color); }
+.focus-end.ongoing { background: var(--focus-current-color); }
+.points-ledger-toolbar { margin-bottom: 4px; display: flex; justify-content: space-between; }
+.points-ledger-list { margin-top: 0; }
+.points-ledger-footer { flex: 0 0 auto; padding-top: 12px; display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+.points-ledger-redeem { margin-right: auto; padding-inline: 0; }
+.points-ledger-loading { padding: 16px; text-align: center; }
+.points-income { color: #389e0d; white-space: nowrap; }
+.points-expense { color: #cf1322; white-space: nowrap; }
+
+/* 流水筛选区固定，仅内部列表滚动；最大高度继续由通用弹框规则决定。 */
+.ant-modal-wrap > .points-ledger-modal > .ant-modal-container > .ant-modal-body { display: flex; flex-direction: column; overflow-y: hidden !important; }
+.points-ledger-modal .points-ledger-toolbar, .points-ledger-modal .ant-alert { flex: 0 0 auto; }
+.points-ledger-modal .points-ledger-list { min-height: 0; flex: 1 1 auto; overflow-y: auto; }
+
+
+/* 专注明细使用独立卡片样式，不影响积分流水复用的历史列表。 */
+.today-focus-record-list { display: flex; flex-direction: column; gap: 8px; padding: 2px 6px 2px 0; }
+.today-focus-record { --record-color: #4876d4; flex: 0 0 auto; min-width: 0; padding: 9px 12px; border: 1px solid #e9edf2; border-radius: 12px; background: #fcfdff; }
+.today-focus-record--completed { --record-color: #219868; }
+.today-focus-record--interrupted { --record-color: #cb8a39; }
+.today-focus-record--historical { --record-color: #8c96a5; }
+.today-focus-record-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.today-focus-record-title { min-width: 0; color: #344054; font-size: 13px; font-weight: 600; line-height: 22px; overflow-wrap: anywhere; }
+.today-focus-record-status { flex-shrink: 0; margin-inline-end: 0; }
+.today-focus-record-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 5px; color: #8a94a3; font-size: 11px; }
+.today-focus-record-meta > span { display: inline-flex; align-items: center; gap: 5px; font-variant-numeric: tabular-nums; }
+.today-focus-record-meta b { color: #596579; font-weight: 600; }
+.today-focus-record-reason { display: flex; align-items: flex-start; gap: 7px; margin-top: 7px; padding: 5px 8px; border-radius: 7px; background: #fff8ef; color: #8f7860; font-size: 12px; line-height: 19px; }
+.today-focus-record-reason > svg { flex-shrink: 0; margin-top: 3px; color: #cb9a60; }
+.today-focus-record-reason > div { display: flex; flex-wrap: wrap; gap: 2px 8px; min-width: 0; overflow-wrap: anywhere; }
+.today-focus-record-reason-label { color: #b2834d; font-weight: 500; }
+
+/* 积分流水只定义布局，颜色、字号、边框与圆角由 Ant Design 组件及主题管理。 */
+.points-ledger-toolbar { align-items: center; gap: 16px; flex-wrap: wrap; }
+/* 覆盖旧专注列表的首尾间距与最小高度，保证流水各行留白一致。 */
+.points-ledger-list > .points-ledger-entry { flex-direction: column; align-items: stretch; justify-content: flex-start; min-height: 0; padding: 11px 0; gap: 0; margin-bottom: 0; }
+.points-ledger-entry-row { width: 100%; }
+.points-ledger-entry-heading { display: flex; align-items: baseline; gap: 12px; }
+.points-ledger-entry-heading > .ant-tag { flex-shrink: 0; margin-inline-end: 0; }
+.points-ledger-entry-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.points-ledger-entry-body { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.points-ledger-entry-time { margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; }
+.points-ledger-amount { display: flex; align-items: baseline; gap: 16px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+/* 收紧今日专注信息区的留白，保持内容紧凑。 */
+.today-focus { gap: 10px; }
+.today-focus-summary { margin: 0; }
+.today-focus-metric { padding: 10px 12px; }
+.today-focus-metric-value { margin-top: 2px; }
+.today-focus-metric-value strong { font-size: 24px; line-height: 28px; }
+.today-focus-distribution-header { margin-top: 0; }
+.today-focus-track { height: 36px; }
+.today-focus-track .focus-segment { top: 0; height: 100%; }
+.today-focus-track .focus-end { height: 100%; }
+.pomodoro-history .ant-card-body { padding-bottom: 16px; }
+@media (min-width: 901px) and (max-height: 800px) {
+  /* 矮窗口保持标签在上、数值在下，只收紧间距以保留明细空间。 */
+  .today-focus-summary { gap: 8px; }
+  .today-focus-metric { padding: 8px 10px; }
+  .today-focus-metric-value { margin-top: 2px; }
+  .today-focus-metric-value strong { font-size: 22px; line-height: 26px; }
+}
+/* 仅收紧今日专注标题栏，为下方记录列表留出更多高度。 */
+.pomodoro-history.ant-card > .ant-card-head { min-height: 44px; flex: 0 0 auto; }
+.pomodoro-history.ant-card > .ant-card-head .ant-card-head-title,
+.pomodoro-history.ant-card > .ant-card-head .ant-card-extra { padding-block: 8px; }
+
+/* 统计、时间轴和记录随正文一起滚动，避免嵌套滚动区域。 */
+.pomodoro-history.ant-card > .ant-card-body { overflow-y: auto; }
+.pomodoro-history .today-focus { flex: 0 0 auto; }
+.pomodoro-history .today-focus-record-list { flex: 0 0 auto; overflow: visible; padding-right: 0; }/* 收紧积分入口箭头两侧空隙，不改变礼物图标与积分数字的间距。 */
+.pomodoro-rewards-link { padding-right: 8px; }
+.pomodoro-rewards-link .pomodoro-points-chevron { margin-left: -3px; }
+
+/* 弹框余额复用外部积分入口的视觉样式，不添加点击交互。 */
+.points-ledger-balance { padding: 4px 12px; line-height: 24px; }
+
+/* 左侧执行轨迹决定共同高度，右侧溢出记录按可用高度渐隐收起。 */
+.review-execution-focus-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 16px;
+  margin-top: 18px;
+}
+.review-execution-focus-grid > .review-execution-trace,
+.review-focus-distribution {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 320px;
+  margin: 0;
+  padding: 18px 20px 12px;
+  border: 1px solid #e4ebf4;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fff 0%, #fafcff 100%);
+}
+.review-execution-focus-grid .review-execution-trace-heading {
+  flex-shrink: 0;
+}
+.review-execution-focus-grid .review-execution-timeline {
+  flex-shrink: 0;
+  overflow: visible;
+}
+.review-focus-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 14px;
+  overflow: visible;
+}
+.review-focus-body .today-focus-record-list {
+  flex: 0 0 auto;
+  max-height: none;
+  overflow: visible;
+}
+@media (max-width: 900px) {
+  .review-execution-focus-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 收起时额外露出下一条记录，记录本身向底部逐渐透明，提示还有更多内容。 */
+.review-focus-body .today-focus-record--preview {
+  height: 44px;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.65) 35%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.65) 35%, transparent 100%);
+}
+.review-focus-body .today-focus-expand-actions {
+  display: flex;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.review-focus-body .today-focus-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #6383ac;
+  border-radius: 16px;
+  transition: background-color 0.2s, color 0.2s;
+}
+.review-focus-body .today-focus-expand:hover {
+  color: #1677ff;
+  background: rgba(22, 119, 255, 0.06) !important;
+}
+
+/* 最后一项无需为下一条轨迹预留行距，避免等高模块底部出现多余留白。 */
+.review-execution-focus-grid .review-trace-item:last-child {
+  min-height: 0;
+}
+.review-execution-focus-grid .review-trace-item:last-child .review-trace-content {
+  padding-bottom: 0;
+}
+
+.today-focus-record-content { display: flex; flex-direction: column; gap: 8px; }
+.review-focus-distribution { contain: size; }
+.review-focus-body { display: flex; overflow: hidden; }
+.review-focus-body .today-focus--fit { height: 100%; min-height: 0; }
+.review-focus-body .today-focus--fit > :not(.today-focus-record-list) { flex-shrink: 0; }
+.review-focus-body .today-focus--fit .today-focus-record-list { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+/* 渐隐直接作用于被裁剪的记录区域，收起状态不产生内部滚动条。 */
+.review-focus-body .today-focus--collapsed .today-focus-record-list { -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 calc(100% - 48px), transparent 100%); mask-image: linear-gradient(to bottom, #000 0%, #000 calc(100% - 48px), transparent 100%); }
+.review-focus-body .today-focus--expanded .today-focus-record-list { overflow-y: auto; }
+@media (max-width: 900px) {
+  .review-focus-distribution { contain: none; }
+  .review-focus-body .today-focus--fit { height: auto; }
+  .review-focus-body .today-focus--fit .today-focus-record-list { flex: 0 0 auto; overflow: visible; }
 }

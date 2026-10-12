@@ -9,11 +9,13 @@ import {
 } from "antd";
 import DailyDatePicker from "@/components/ui/DailyDatePicker";
 import MarkdownEditor from "@/components/ui/MarkdownEditor";
+import TodayFocus from "@/components/TodayFocus";
 import { CalendarCheck, Check, CircleAlert, LoaderCircle, RotateCcw } from "lucide-react";
 import {
   dailyReviewApi,
   dailyScheduleApi,
   eventsApi,
+  pomodoroApi,
   recurringActionsApi,
 } from "@/lib/api";
 import {
@@ -23,6 +25,7 @@ import {
 import type {
   DailyReviewView,
   DailySchedule,
+  PomodoroRecord,
   Event,
 } from "@/types";
 import { REVIEW_REASON_BY_CODE, type ReviewReasonCode } from "@/lib/reviewReasons";
@@ -71,6 +74,8 @@ export default function DailyReviewDemo() {
   );
   const [data, setData] = useState<DailyReviewView | null>(null);
   const [schedule, setSchedule] = useState<DailySchedule | null>(null);
+  const [focusRecords, setFocusRecords] = useState<PomodoroRecord[]>([]);
+  const [clock, setClock] = useState(Date.now());
   const [actionScheduleDates, setActionScheduleDates] = useState<string[]>([]);
   const [inboxEvents, setInboxEvents] = useState<Event[]>([]);
   const [reflection, setReflection] = useState("");
@@ -93,11 +98,13 @@ export default function DailyReviewDemo() {
         daySchedule,
         events,
         nextActionScheduleDates,
+        dayFocusRecords,
       ] = await Promise.all([
         dailyReviewApi.get(reviewDate),
         dailyScheduleApi.get(reviewDate),
         eventsApi.list(),
         dailyScheduleApi.actionDates(),
+        pomodoroApi.today(reviewDate),
       ]);
       const unreviewedSlots = daySchedule.slots.filter(
         (slot) =>
@@ -117,6 +124,7 @@ export default function DailyReviewDemo() {
       setReviewBlocked(false);
       setData(review);
       setSchedule(daySchedule);
+      setFocusRecords(dayFocusRecords);
       setActionScheduleDates(nextActionScheduleDates);
       setInboxEvents(events.filter((event) => event.status === 0));
       setReflection(review.review.reflection_text || "");
@@ -131,6 +139,10 @@ export default function DailyReviewDemo() {
       setLoading(false);
     }
   };
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     void load(date);
   }, [date]);
@@ -455,6 +467,7 @@ export default function DailyReviewDemo() {
                 </div>
               </div>
             </div>
+            <div className="review-execution-focus-grid">
             <div className="review-execution-trace">
               <div className="review-execution-trace-heading">
                 <div>
@@ -473,23 +486,9 @@ export default function DailyReviewDemo() {
                     const actionTitle =
                       slot.action?.title?.trim() || "未绑定行动";
                     const note = slot.actual_notes?.trim() || "";
-                    const normalizeTraceText = (value: string) =>
-                      value.replace(/[\s·•—–:：，,。.!！?？-]/g, "");
-                    const normalizedTitle = normalizeTraceText(actionTitle);
-                    const normalizedNote = normalizeTraceText(note);
-                    const isDuplicateNote = Boolean(
-                      normalizedTitle &&
-                      [
-                        normalizedTitle,
-                        `完成${normalizedTitle}`,
-                        `已完成${normalizedTitle}`,
-                        `${normalizedTitle}完成`,
-                        `${normalizedTitle}完成${normalizedTitle}`,
-                      ].includes(normalizedNote),
-                    );
-                    const hasMeaningfulNote = Boolean(note) && !isDuplicateNote;
+                    const hasNote = Boolean(note);
                     const hasReview = Boolean(
-                      hasMeaningfulNote ||
+                      hasNote ||
                       slot.met_expectation !== null ||
                       slot.focused !== null,
                     );
@@ -541,13 +540,13 @@ export default function DailyReviewDemo() {
                               )}
                             </div>
                           </div>
-                          <p className={!hasMeaningfulNote ? "is-muted" : ""}>
+                          <p className={!hasNote ? "is-muted" : ""}>
                             {reviewReason && (
                               <span className="review-trace-reason">
                                 {reviewReason.label}
                               </span>
                             )}
-                            {hasMeaningfulNote ? note : "未填写有效复盘备注"}
+                            {hasNote ? note : "未填写复盘备注"}
                           </p>
                         </div>
                       </article>
@@ -559,6 +558,18 @@ export default function DailyReviewDemo() {
                   今天还没有时间段复盘记录。
                 </div>
               )}
+            </div>
+            <section className="review-focus-distribution" aria-label="今日专注分布">
+              <div className="review-execution-trace-heading">
+                <div>
+                  <strong>今日专注分布</strong>
+                  <span>番茄钟专注与休息记录，对照执行轨迹回顾时间投入。</span>
+                </div>
+              </div>
+              <div className="review-focus-body">
+                <TodayFocus key={date} recordOrder="asc" fitHeight records={focusRecords} slots={schedule?.slots ?? []} now={date === localDate(new Date(clock)) ? clock : new Date(`${date}T23:59:59.999`).getTime()} />
+              </div>
+            </section>
             </div>
             <div className="review-slot-summary" aria-label="当天时间段复盘汇总与整体状态">
               <div className="review-slot-summary-heading">

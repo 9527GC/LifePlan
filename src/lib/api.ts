@@ -84,6 +84,8 @@ export const pomodoroApi = {
   start: (actionId: number | undefined, plannedSeconds: number) => invokeCommand<PomodoroRecord>("start_pomodoro", { actionId: actionId ?? null, plannedSeconds }),
   finish: (recordId: number, status: 0 | 1 | 2, interruptType?: 0 | 1 | 2, interruptReason?: string) => invokeCommand<PomodoroStatus>("finish_pomodoro", { recordId, status, interruptType: interruptType ?? null, interruptReason: interruptReason || null }),
   award: (recordId: number) => invokeCommand<PomodoroStatus>("award_pomodoro_points", { recordId }),
+  detail: (recordId: number) => invokeCommand<PomodoroRecord | null>("get_focus_detail", { recordId }),
+  today: (date?: string) => { const start = date ? new Date(`${date}T00:00:00`) : new Date(); start.setHours(0, 0, 0, 0); const end = new Date(start); end.setDate(end.getDate() + 1); return invokeCommand<PomodoroRecord[]>("get_today_focus", { start: start.getTime(), end: end.getTime() }); },
   records: (limit = 20) => invokeCommand<PomodoroRecord[]>("get_pomodoro_records", { limit }),
 };
 
@@ -104,3 +106,6 @@ export const dailyReviewApi = {
   saveDraft: (payload: DailyReviewDraft) => invokeCommand<DailyReview>("save_daily_review_draft", { payload }),
   suggestions: (planDate: string) => invokeCommand<DailyReviewSuggestion[]>("get_daily_review_suggestions", { planDate }),
 };
+
+export interface PointsEntry { id: number; kind: string; content: string; amount: number; occurred_at: number; source_id?: number; historical: boolean }
+export const pointsApi = { list: (page = 1, kind?: string) => invokeCommand<{ entries: PointsEntry[]; total: number }>("get_points_ledger", { page, kind: kind ?? null }) };

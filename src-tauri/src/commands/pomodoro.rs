@@ -125,6 +125,7 @@ pub fn award_pomodoro_points(
         )
         .map_err(|e| e.to_string())?;
     }
+    if award > 0 { super::points::record(&tx, &space, "focus", record_id, award as i64, now_millis()).map_err(|e| e.to_string())?; }
     tx.commit().map_err(|e| e.to_string())?;
     Ok(PomodoroStatus {
         active: active_record(&conn, &space).map_err(|e| e.to_string())?,
@@ -167,6 +168,7 @@ pub fn finish_pomodoro(
     if award > 0 {
         tx.execute("INSERT INTO user_points (space_id, total_points, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(space_id) DO UPDATE SET total_points = user_points.total_points + excluded.total_points, updated_at = excluded.updated_at", params![space, award, end]).map_err(|e| e.to_string())?;
     }
+    if award > 0 { super::points::record(&tx, &space, "focus", record_id, award as i64, end).map_err(|e| e.to_string())?; }
     tx.commit().map_err(|e| e.to_string())?;
     Ok(PomodoroStatus {
         active: None,
@@ -190,4 +192,21 @@ pub fn get_pomodoro_records(
             .collect::<rusqlite::Result<Vec<_>>>();
         rows.map_err(|e| e.to_string())
     }
+}
+
+#[tauri::command]
+pub fn get_today_focus(state: State<'_, AppState>, start: i64, end: i64) -> Result<Vec<PomodoroRecord>, String> {
+    if end <= start || end - start > 90_000_000 { return Err("日期范围无效".into()); }
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let space = current_space_id(&conn).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare("SELECT r.id,r.action_id,a.title,r.start_time,r.end_time,r.planned_seconds,r.actual_seconds,r.status,r.interrupt_type,r.interrupt_reason,r.points_awarded FROM pomodoro_records r LEFT JOIN actions a ON a.id=r.action_id AND a.space_id=r.space_id WHERE r.space_id=?1 AND r.start_time<?3 AND COALESCE(r.end_time,?3)>?2 ORDER BY r.start_time").map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params![space,start,end], row_to_record).map_err(|e| e.to_string())?;
+    rows.collect::<rusqlite::Result<Vec<_>>>().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_focus_detail(state: State<'_, AppState>, record_id: i64) -> Result<Option<PomodoroRecord>, String> {
+    let conn = state.db.lock().map_err(|e| e.to_string())?;
+    let space = current_space_id(&conn).map_err(|e| e.to_string())?;
+    conn.query_row("SELECT r.id,r.action_id,a.title,r.start_time,r.end_time,r.planned_seconds,r.actual_seconds,r.status,r.interrupt_type,r.interrupt_reason,r.points_awarded FROM pomodoro_records r LEFT JOIN actions a ON a.id=r.action_id AND a.space_id=r.space_id WHERE r.space_id=?1 AND r.id=?2",params![space,record_id],row_to_record).optional().map_err(|e|e.to_string())
 }

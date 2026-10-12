@@ -1,5 +1,5 @@
 use crate::commands::{
-    actions, analytics, daily_list, daily_review, daily_schedule, events, pomodoro,
+    points, actions, analytics, daily_list, daily_review, daily_schedule, events, pomodoro,
     recurring_actions, rewards, system,
 };
 use crate::db::init_db;
@@ -213,6 +213,9 @@ pub fn run() {
             pomodoro::finish_pomodoro,
             pomodoro::award_pomodoro_points,
             pomodoro::get_pomodoro_records,
+            pomodoro::get_today_focus,
+            pomodoro::get_focus_detail,
+            points::get_points_ledger,
             rewards::get_rewards_overview,
             rewards::create_reward,
             rewards::update_reward,

@@ -114,6 +114,12 @@ pub fn db_path() -> Result<PathBuf, DbError> {
 }
 
 pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
+    let initialized = run_base_migrations(conn)?;
+    crate::commands::points::ensure_schema(conn).map_err(|e| DbError::MigrationFailed(e.to_string()))?;
+    Ok(initialized)
+}
+
+fn run_base_migrations(conn: &mut Connection) -> Result<bool, DbError> {
     let version: i32 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
@@ -134,7 +140,7 @@ pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
             .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
         return Ok(true);
     }
-    if version == 20 || version == 21 {
+    if version == 20 || version == 21 || version == 22 {
         ensure_recurring_schedule_schema(conn)?;
         conn.pragma_update(None, "user_version", migrations::CURRENT_SCHEMA_VERSION)
             .map_err(|error| DbError::MigrationFailed(error.to_string()))?;
@@ -613,7 +619,7 @@ mod tests {
         conn.execute_batch("ALTER TABLE recurring_actions DROP COLUMN schedule_start_date; PRAGMA user_version = 21;").unwrap();
         run_migrations(&mut conn).unwrap();
         assert!(column_exists(&conn, "recurring_actions", "schedule_start_date").unwrap());
-        assert_eq!(conn.pragma_query_value::<i32, _>(None, "user_version", |row| row.get(0)).unwrap(), 22);
+        assert_eq!(conn.pragma_query_value::<i32, _>(None, "user_version", |row| row.get(0)).unwrap(), 23);
         run_migrations(&mut conn).unwrap();
     }
 

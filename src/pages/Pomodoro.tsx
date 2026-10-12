@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Alert, Button, Card, Empty, Form, Input, Modal, Pagination, Select, Space, Tag, Tooltip, Typography, message } from "antd";
-import { Gift, PanelTopClose, Play, TimerReset } from "lucide-react";
+import { Alert, Button, Card, Form, Input, Modal, Select, Space, Tooltip, Typography, message } from "antd";
+import { ChevronRight, CalendarDays, Gift, PanelTopClose, Play, TimerReset } from "lucide-react";
 import { actionsApi, dailyScheduleApi, pomodoroApi } from "@/lib/api";
-import type { Action, PomodoroRecord, PomodoroStatus } from "@/types";
+import type { Action, DailyScheduleSlot, PomodoroRecord, PomodoroStatus } from "@/types";
 import { userFacingError } from "@/lib/errors";
 import { track } from "@/lib/analytics";
 import { isPomodoroFloatingWindowOpen, openPomodoroFloatingWindow, setFloatingPomodoroMode, showMainWindow } from "@/lib/pomodoroWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listenPomodoroChanged, notifyPomodoroChanged } from "@/lib/pomodoroSync";
 import { clearPomodoroCompletion, consumePomodoroReviewRequest, getPomodoroCompletion, getPomodoroWindowMode, savePomodoroCompletion, setPomodoroWindowMode } from "@/lib/pomodoroSession";
+
+import TodayFocus from "@/components/TodayFocus";
+import PointsLedger from "@/components/PointsLedger";
 
 type PomodoroPhase = "work" | "rest";
 type AudioRuntimeWindow = Window & { webkitAudioContext?: typeof AudioContext };
@@ -82,7 +85,6 @@ const durations = [1, 2, 3, 4, 5, 6].map((rounds) => ({
 
 const formatSeconds = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 const durationLabel = (seconds: number) => durations.find((item) => item.value === seconds)?.label ?? `${Math.round(seconds / 60)}分钟`;
-const statusText = (status: number) => status === 1 ? "已完成" : status === 0 ? "已放弃" : status === 2 ? "已中断" : "进行中";
 const localDate = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`; };
 type PomodoroPrefill = { actionId?: number; plannedSeconds?: number; requestedAt?: number };
 
@@ -172,21 +174,29 @@ export default function Pomodoro() {
   const [reviewNavigating, setReviewNavigating] = useState(false);
   const [windowMode, setWindowMode] = useState(getPomodoroWindowMode);
   const [windowModeReady, setWindowModeReady] = useState(false);
-  const [recordsPage, setRecordsPage] = useState(1);
+  const [slots, setSlots] = useState<DailyScheduleSlot[]>([]);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [clock, setClock] = useState(Date.now());
   const [form] = Form.useForm();
   const navigate = useNavigate();
   const finishingRef = useRef(false);
   const floatingSwitchingRef = useRef(false);
   const loadRevisionRef = useRef(0);
   const awardedBlocksRef = useRef({ recordId: 0, blocks: 0, awarding: false });
-  const recordsPageSize = 10;
+
+  useEffect(() => {
+    let date = localDate();
+    const timer = window.setInterval(() => {
+      setClock(Date.now());
+      if (date !== localDate()) { date = localDate(); void load(false); }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const active = status.active;
   const activeElapsed = active ? Math.max(0, Math.floor((Date.now() - active.start_time) / 1000)) : 0;
   const phaseInfo = getPhaseInfo(active?.planned_seconds ?? plannedSeconds, active ? Math.max(elapsedSeconds, activeElapsed) : 0);
   const progress = active ? Math.max(0, Math.min(100, (phaseInfo.remaining / phaseInfo.total) * 100)) : 0;
-  const historyRecords = records.filter((item) => item.status !== 0);
-  const visibleRecords = historyRecords.slice((recordsPage - 1) * recordsPageSize, recordsPage * recordsPageSize);
 
   const finish = async (finishStatus: 0 | 1 | 2, interruptType?: 0 | 1 | 2, reason?: string): Promise<boolean> => {
     if (finishStatus === 1) prepareCompletionSound();
@@ -206,7 +216,7 @@ export default function Pomodoro() {
       setElapsedSeconds(0);
       setError("");
       // 计时状态已经落库，无需等待记录列表刷新；否则列表请求异常会让“中断”看似一直卡住。
-      void pomodoroApi.records().then(setRecords).catch(() => undefined);
+      void pomodoroApi.today().then(setRecords).catch(() => undefined);
       if (finishStatus === 1) {
         const completion = { recordId: active.id, points: completionBlocks, actionId: active.action_id ?? undefined, completedAt: Date.now() };
         savePomodoroCompletion(completion);
@@ -235,7 +245,7 @@ export default function Pomodoro() {
     try {
       const [next, nextRecords, nextActions, todaySchedule] = await Promise.all([
         pomodoroApi.status(),
-        pomodoroApi.records(),
+        pomodoroApi.today(),
         actionsApi.list(),
         dailyScheduleApi.get(localDate()),
       ]);
@@ -244,6 +254,7 @@ export default function Pomodoro() {
       const nextElapsed = next.active ? Math.max(0, Math.floor((Date.now() - next.active.start_time) / 1000)) : 0;
       setStatus(next);
       setRecords(nextRecords);
+      setSlots(todaySchedule.slots);
       setActions(nextActions.filter((item) => scheduledActionIds.has(item.id)));
       setElapsedSeconds(nextElapsed);
       // 从复盘页返回时，组件会重新挂载；优先用已持久化的完成结果恢复成功页，
@@ -260,7 +271,7 @@ export default function Pomodoro() {
   const syncPomodoroState = async () => {
     const revision = ++loadRevisionRef.current;
     try {
-      const [next, nextRecords] = await Promise.all([pomodoroApi.status(), pomodoroApi.records()]);
+      const [next, nextRecords] = await Promise.all([pomodoroApi.status(), pomodoroApi.today()]);
       if (revision !== loadRevisionRef.current) return;
       setStatus(next);
       setRecords(nextRecords);
@@ -379,7 +390,7 @@ export default function Pomodoro() {
           const addedPoints = Math.max(0, nextBlocks - previousBlocks);
           awardedBlocksRef.current.blocks = nextBlocks;
           setStatus(next);
-          setRecords(await pomodoroApi.records());
+          setRecords(await pomodoroApi.today());
           notifyPomodoroChanged();
           if (addedPoints > 0) {
             message.info({ content: `完成 ${addedPoints} 个30分钟专注，获得 ${addedPoints} 积分`, duration: 2 });
@@ -454,7 +465,6 @@ export default function Pomodoro() {
   };
 
   const stateText = !active ? "准备开始" : phaseInfo.phase === "work" ? active.action_title || "自由专注" : "休息 5 分钟";
-  const historyDuration = (seconds: number) => durationLabel(seconds);
 
   return <div className="page pomodoro-page">
     <header className="page-header pomodoro-page-header">
@@ -467,16 +477,16 @@ export default function Pomodoro() {
           className="rewards-balance pomodoro-rewards-link"
           role="button"
           tabIndex={0}
-          aria-label="查看积分汇总"
-          onClick={() => navigate("/rewards")}
+          aria-label="查看积分流水"
+          onClick={() => setLedgerOpen(true)}
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
-              navigate("/rewards");
+              setLedgerOpen(true);
             }
           }}
         >
-          <Gift size={20} />{status.total_points}<span>积分</span>
+          <Gift size={18} aria-hidden="true" />{status.total_points}<span>积分</span><ChevronRight className="pomodoro-points-chevron" size={14} aria-hidden="true" />
         </div>
       </div>
     </header>
@@ -534,16 +544,14 @@ export default function Pomodoro() {
             <div className="pomodoro-control-field"><span className="pomodoro-control-label">专注时长</span><Select size="large" className="full-width" value={plannedSeconds} onChange={(value) => { setPlannedSeconds(value); setElapsedSeconds(0); }} options={durations} /></div>
             <Button className="pomodoro-start-button" type="primary" size="large" icon={<Play size={17} />} loading={starting} disabled={starting} onClick={() => void start()}>开始专注</Button>
           </div> : <>
-            <Space className="pomodoro-active-controls" size="middle"><Button type="primary" size="large" icon={<Play size={16} />} onClick={() => void finish(1)}>立即完成</Button><Button size="large" danger icon={<TimerReset size={16} />} onClick={() => setInterruptOpen(true)}>放弃并中断</Button></Space>
+            <Space className="pomodoro-active-controls" size="middle"><Button type="primary" size="large" icon={<Play size={16} />} onClick={() => void finish(1)}>立即完成</Button><Button size="large" danger icon={<TimerReset size={16} />} onClick={() => setInterruptOpen(true)}>中断专注</Button></Space>
           </>}
           <div className="pomodoro-tip">{active ? `本次${durationLabel(active.planned_seconds)}，每轮工作 25 分钟后休息 5 分钟。` : `完成一次${durationLabel(plannedSeconds)}，可获得 1 积分。`}</div>
         </>}
       </Card>
-      <Card title="专注记录" bordered={false} className="pomodoro-history">
-        <div className="pomodoro-history-list">{historyRecords.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有番茄记录" /> : visibleRecords.map((item) => <div className="pomodoro-history-item" key={item.id}><div><Typography.Text strong>{item.action_title || "自由专注"}</Typography.Text><div className="pomodoro-history-meta">{new Date(item.start_time).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })} · {historyDuration(item.planned_seconds)}</div></div><Space><Tag color={item.status === 1 ? "green" : item.status === 2 ? "orange" : "blue"}>{statusText(item.status)}</Tag>{item.points_awarded > 0 && <Tag color="gold">+{item.points_awarded} 分</Tag>}</Space></div>)}</div>
-        {historyRecords.length > recordsPageSize && <Pagination size="small" current={recordsPage} pageSize={recordsPageSize} total={historyRecords.length} showSizeChanger={false} onChange={setRecordsPage} />}
-      </Card>
+      <Card title="今日专注" extra={<span className="today-focus-date"><CalendarDays size={14} aria-hidden="true" />{new Date(clock).toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "short" })}</span>} bordered={false} className="pomodoro-history"><TodayFocus records={records} slots={slots} now={clock} /></Card>
     </div>}
+    <PointsLedger open={ledgerOpen} onClose={() => setLedgerOpen(false)} balance={status.total_points} onRedeem={() => { setLedgerOpen(false); navigate("/rewards"); }} />
     {interruptOpen && <Modal title="记录番茄中断" open destroyOnHidden onCancel={() => { setInterruptOpen(false); form.resetFields(); }} okText="保存" cancelText="取消" confirmLoading={interrupting} onOk={() => void form.submit()}><Form form={form} layout="vertical" onFinish={(values) => void submitInterrupt(values)}><Form.Item name="interruptType" label="打断类型" initialValue={0} rules={[{ required: true }]}><Select options={[{ value: 0, label: "内部分心" }, { value: 1, label: "外部干扰" }, { value: 2, label: "紧急事务" }]} /></Form.Item><Form.Item name="reason" label="打断原因"><Input.TextArea autoSize={{ minRows: 2, maxRows: 4 }} /></Form.Item></Form></Modal>}
   </div>;
 }
