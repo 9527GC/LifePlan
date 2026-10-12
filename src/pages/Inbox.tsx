@@ -1559,7 +1559,12 @@ function ProcessModal({
                   >
                     <Input autoFocus />
                   </Form.Item>
-                  <Form.Item className="full" name="target" label="事件目标">
+                  <Form.Item
+                    className="full"
+                    name="target"
+                    label="事件目标"
+                    rules={[{ required: true, whitespace: true, message: "请输入事件目标" }]}
+                  >
                     <Input.TextArea
                       placeholder="你准备通过这件事获得什么结果？"
                       autoSize={{ minRows: 3, maxRows: 5 }}

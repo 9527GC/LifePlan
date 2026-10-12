@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ClipboardEvent } from "react";
-import { Alert, Button, Card, Empty, Form, Input, InputNumber, Modal, Pagination, Popconfirm, Space, Spin, Tag, Typography, message } from "antd";
-import { Camera, ChevronRight, Eye, Gift, History, ImagePlus, Pencil, Plus, Share2, ShoppingBag, Trash2 } from "lucide-react";
+import { Alert, Button, Card, Dropdown, Empty, Form, Input, InputNumber, Modal, Pagination, Space, Spin, Tag, Typography, message } from "antd";
+import { Camera, ChevronRight, Eye, Gift, History, ImagePlus, MoreHorizontal, Pencil, Plus, Share2, ShoppingBag, Trash2 } from "lucide-react";
 import QRCode from "qrcode";
 import { rewardsApi } from "@/lib/api";
 import type { NewReward, Reward, RewardCheckin, RewardExchange, RewardsOverview } from "@/types";
@@ -414,7 +414,34 @@ export default function Rewards() {
       {data.rewards.length === 0 ? <Card bordered={false} className="card reward-empty"><Empty description="奖励池还是空的，添加一个想要的奖励吧" /></Card> : data.rewards.map((reward) => <Card key={reward.id} bordered={false} className="reward-card">
         <div className="reward-card-top"><div className="reward-card-icon">{reward.icon || "🎁"}</div><Tag color="gold" className="reward-points-tag">{reward.points_required} 积分</Tag></div>
         <Typography.Title level={4} ellipsis={{ rows: 1 }}>{reward.name}</Typography.Title>
-        <div className="reward-card-footer"><Space size={2} className="reward-card-actions"><Button size="small" type="text" icon={<Pencil size={14} />} onClick={() => showForm(reward)} /><Popconfirm title="归档这个奖励？" onConfirm={() => void archive(reward.id)} okText="归档" cancelText="取消"><Button size="small" danger type="text" icon={<Trash2 size={14} />} /></Popconfirm><Button size="small" type="primary" icon={<ShoppingBag size={14} />} disabled={data.total_points < reward.points_required} onClick={() => void exchange(reward)}>兑换</Button></Space></div>
+        <div className="reward-card-footer">
+          <Dropdown
+            trigger={["hover", "click"]}
+            placement="bottomLeft"
+            menu={{
+              items: [
+                { key: "edit", icon: <Pencil size={14} />, label: "编辑" },
+                { key: "delete", danger: true, icon: <Trash2 size={14} />, label: "删除" },
+              ],
+              onClick: ({ key }) => {
+                if (key === "edit") {
+                  showForm(reward);
+                  return;
+                }
+                Modal.confirm({
+                  title: "归档这个奖励？",
+                  okText: "归档",
+                  cancelText: "取消",
+                  okButtonProps: { danger: true },
+                  onOk: () => archive(reward.id),
+                });
+              },
+            }}
+          >
+            <Button size="small" type="text" className="reward-card-more" aria-label={`管理奖励：${reward.name}`} icon={<MoreHorizontal size={18} />} />
+          </Dropdown>
+          <Button size="small" type="primary" icon={<ShoppingBag size={14} />} disabled={data.total_points < reward.points_required} onClick={() => void exchange(reward)}>兑换</Button>
+        </div>
       </Card>)}
     </div>
     <Card title={<Space><History size={17} />兑换记录</Space>} bordered={false} className="exchange-card">

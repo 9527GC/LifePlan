@@ -2524,7 +2524,7 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
 .reward-card-footer {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 4px;
   margin-top: 10px;
 }
@@ -7182,4 +7182,14 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   padding: 6px 14px;
   align-content: center;
   gap: 2px;
+}
+
+.reward-card-more.ant-btn {
+  width: 28px;
+  color: #8c8c8c;
+}
+.reward-card-more.ant-btn:hover,
+.reward-card-more.ant-btn:focus-visible {
+  color: #595959;
+  background: rgba(0, 0, 0, 0.04);
 }
