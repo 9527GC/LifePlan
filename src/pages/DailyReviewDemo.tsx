@@ -10,6 +10,7 @@ import {
 import DailyDatePicker from "@/components/ui/DailyDatePicker";
 import MarkdownEditor from "@/components/ui/MarkdownEditor";
 import TodayFocus from "@/components/TodayFocus";
+import ReviewPriorityChart from "@/components/ReviewPriorityChart";
 import { CalendarCheck, Check, CircleAlert, LoaderCircle, RotateCcw } from "lucide-react";
 import {
   dailyReviewApi,
@@ -406,10 +407,10 @@ export default function DailyReviewDemo() {
               </div>
             </div>
             <div className="review-summary-workspace">
-              <div className="review-completion-panel">
+              <div className="review-completion-panel review-action-summary-panel">
                 <div className="review-completion-heading">
-                  <strong>行动完成度</strong>
-                  <span>今日已排程行动的完成情况</span>
+                  <strong>行动安排完成情况</strong>
+                  <span>今日已排程行动的完成进度与计划时间分布</span>
                 </div>
                 <div className="review-overview">
                   <div className="review-overview-stat review-overview-planned">
@@ -433,19 +434,8 @@ export default function DailyReviewDemo() {
                     <span>今日完成度</span>
                   </div>
                 </div>
-              </div>
-              <div className="review-priority-panel">
-                <div className="review-priority-heading">
-                  <div>
-                    <strong>行动安排优先级</strong>
-                    <span>
-                      今日已排程行动的 importance / urgency
-                    </span>
-                  </div>
-                  <span className="review-priority-total">
-                    {quadrantActionCount} 项
-                  </span>
-                </div>
+                <div className="review-priority-content">
+                  <ReviewPriorityChart quadrants={quadrants} />
                 <div className="review-priority-quadrants">
                   {quadrants.map((item, index) => (
                     <div className={`quadrant q${index + 1}`} key={item.name}>
@@ -464,6 +454,7 @@ export default function DailyReviewDemo() {
                       </small>
                     </div>
                   ))}
+                </div>
                 </div>
               </div>
             </div>
