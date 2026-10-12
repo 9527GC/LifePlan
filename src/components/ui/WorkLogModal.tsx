@@ -296,6 +296,8 @@ export default function WorkLogModal({
   const [generating, setGenerating] = useState(false);
   const [content, setContent] = useState("");
   const [logLoaded, setLogLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   // 本次打开一旦展示编辑器，清空正文也保留输入入口；重新打开后重新判断。
   const [editorVisible, setEditorVisible] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -344,6 +346,8 @@ export default function WorkLogModal({
   );
   useEffect(() => {
     let cancelled = false;
+    setLogLoaded(false);
+    setLoadError(null);
     void (async () => {
       try {
         // 按日期兼容旧记录，数据库已有内容时不覆盖，保留原缓存以便恢复。
@@ -360,12 +364,12 @@ export default function WorkLogModal({
         setLogLoaded(true);
       } catch (error) {
         if (cancelled) return;
-        setSaveStatus("error");
-        message.error("工作日志读取失败：" + String(error));
+        // 读取失败与自动保存失败分开显示，避免缺省态误报并提供重试入口。
+        setLoadError(String(error));
       }
     })();
     return () => { cancelled = true; };
-  }, [date]);
+  }, [date, loadAttempt]);
 
   useEffect(() => {
     if (!logLoaded || content === observedContentRef.current) return;
@@ -549,7 +553,8 @@ export default function WorkLogModal({
             {date} · 已填写 {reviewCount}/{slots.length} 个时段复盘
           </span>
         </div>
-        {!apiKey && (
+        {/* 读取失败优先展示，恢复后再提示 AI 配置，避免两个提示同时堆叠。 */}
+        {!loadError && !apiKey.trim() && (
           <Alert
             type="info"
             showIcon
@@ -597,7 +602,15 @@ export default function WorkLogModal({
             onClose={() => setAiError(null)}
           />
         )}
-        {!logLoaded ? (
+        {loadError ? (
+          <Alert
+            type="error"
+            showIcon
+            message="工作日志读取失败"
+            description={loadError}
+            action={<Button onClick={() => setLoadAttempt((attempt) => attempt + 1)}>重试</Button>}
+          />
+        ) : !logLoaded ? (
           <Typography.Text type="secondary">正在读取工作日志…</Typography.Text>
         ) : (
           <div className="work-log-editor-area">
@@ -610,6 +623,10 @@ export default function WorkLogModal({
                 getHtmlRef={bodyHtmlRef}
                 onChange={setContent}
               />
+            ) : !apiKey.trim() ? (
+              <Typography.Paragraph type="secondary" className="work-log-empty work-log-empty-unconfigured">
+                点击“生成工作日志”，AI 会根据当天每个时间段的行动与复盘，按指定模板整理成一份日志。
+              </Typography.Paragraph>
             ) : (
               <Empty
                 className="work-log-empty"

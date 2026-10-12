@@ -2823,6 +2823,11 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   border-radius: 8px;
   text-align: center;
 }
+/* 未配置 AI 时沿用原有纯文字缺省态，不显示新增的空状态图标。 */
+.work-log-empty-unconfigured {
+  margin: 28px 0;
+  padding: 28px 20px;
+}
 .work-log-empty .ant-empty-description {
   max-width: 480px;
   margin: 0 auto;

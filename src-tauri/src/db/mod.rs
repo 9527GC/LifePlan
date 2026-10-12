@@ -115,6 +115,8 @@ pub fn db_path() -> Result<PathBuf, DbError> {
 
 pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
     let initialized = run_base_migrations(conn)?;
+    // 全新建库和部分旧版本升级会提前返回，统一补齐工作日志等复盘表。
+    ensure_daily_review_schema(conn)?;
     crate::commands::points::ensure_schema(conn).map_err(|e| DbError::MigrationFailed(e.to_string()))?;
     Ok(initialized)
 }
@@ -619,6 +621,30 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn 全新建库及旧版升级首次启动即可读写工作日志() {
+        for version in [0, 20, 21, 22, 23] {
+            let mut conn = Connection::open_in_memory().unwrap();
+            if version > 0 {
+                conn.execute_batch(migrations::INIT_MIGRATION).unwrap();
+                conn.pragma_update(None, "user_version", version).unwrap();
+            }
+            run_migrations(&mut conn).unwrap();
+            let space = ensure_current_space(&mut conn).unwrap();
+            assert!(table_exists(&conn, "work_logs").unwrap(), "v{version} 未创建工作日志表");
+            conn.execute(
+                "INSERT INTO work_logs(space_id, log_date, content, updated_at) VALUES(?1, '2026-10-12', '测试日志', 1)",
+                params![space],
+            ).unwrap();
+            run_migrations(&mut conn).unwrap();
+            let content: String = conn.query_row(
+                "SELECT content FROM work_logs WHERE space_id=?1 AND log_date='2026-10-12'",
+                params![space], |row| row.get(0),
+            ).unwrap();
+            assert_eq!(content, "测试日志", "v{version} 重复初始化不应破坏日志");
+        }
+    }
 
     #[test]
     fn v21升级保留重复行动并补齐开始日期() {

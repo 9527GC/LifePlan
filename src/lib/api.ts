@@ -110,7 +110,20 @@ export const dailyReviewApi = {
 export interface PointsEntry { id: number; kind: string; content: string; amount: number; occurred_at: number; source_id?: number; historical: boolean }
 export const pointsApi = { list: (page = 1, kind?: string) => invokeCommand<{ entries: PointsEntry[]; total: number }>("get_points_ledger", { page, kind: kind ?? null }) };
 
+// 浏览器预览沿用原来的本地缓存；桌面端仍使用数据库，不掩盖数据库异常。
 export const workLogApi = {
-  get: (date: string) => invokeCommand<string | null>("get_work_log", { date }),
-  save: (date: string, content: string, importOnly = false) => invokeCommand<void>("save_work_log", { date, content, importOnly }),
+  get: async (date: string): Promise<string | null> => {
+    if (typeof (window as TauriWindow).__TAURI_INTERNALS__?.invoke !== "function") {
+      return localStorage.getItem("lifeplan-work-log-" + date);
+    }
+    return invokeCommand<string | null>("get_work_log", { date });
+  },
+  save: async (date: string, content: string, importOnly = false): Promise<void> => {
+    if (typeof (window as TauriWindow).__TAURI_INTERNALS__?.invoke !== "function") {
+      const key = "lifeplan-work-log-" + date;
+      if (!importOnly || localStorage.getItem(key) === null) localStorage.setItem(key, content);
+      return;
+    }
+    return invokeCommand<void>("save_work_log", { date, content, importOnly });
+  },
 };
