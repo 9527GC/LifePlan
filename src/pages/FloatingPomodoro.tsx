@@ -10,7 +10,7 @@ import { getPhaseInfo, formatSeconds } from "@/lib/pomodoroPresentation";
 import { loadFloatingWindowGeometry, saveFloatingWindowGeometry } from "@/lib/windowPreferences";
 import { listenPomodoroChanged, notifyPomodoroChanged } from "@/lib/pomodoroSync";
 import { POMODORO_FLOATING_WINDOW_MIN_SIZE, POMODORO_FLOATING_WINDOW_READY_EVENT, showMainWindow } from "@/lib/pomodoroWindow";
-import { clearPomodoroCompletion, getPomodoroCompletion, savePomodoroCompletion, savePomodoroReviewRequest, setPomodoroWindowMode } from "@/lib/pomodoroSession";
+import { clearPomodoroCompletion, getPomodoroCompletion, hasPendingPomodoroReviewRequest, savePomodoroCompletion, savePomodoroReviewRequest, setPomodoroWindowMode } from "@/lib/pomodoroSession";
 
 const MIN_WIDTH = POMODORO_FLOATING_WINDOW_MIN_SIZE.width;
 const MIN_HEIGHT = POMODORO_FLOATING_WINDOW_MIN_SIZE.height;
@@ -20,6 +20,8 @@ export default function FloatingPomodoro() {
   const [status, setStatus] = useState<PomodoroStatus>({ total_points: 0 });
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [error, setError] = useState("");
+  const [reviewNavigating, setReviewNavigating] = useState(false);
+  const reviewNavigatingRef = useRef(false);
   const [completionResult, setCompletionResult] = useState<{ points: number; actionId?: number } | null>(null);
   // 悬浮 Webview 创建时可能错过创建前发出的窗口模式事件，因此它默认接管计时结算。
   const [windowMode, setWindowMode] = useState<"main" | "floating">("floating");
@@ -213,13 +215,27 @@ export default function FloatingPomodoro() {
   };
 
   const goToReview = async () => {
-    savePomodoroReviewRequest(completionResult?.actionId);
-    // 悬浮窗口结束本轮专注并跳转复盘后，回到常规番茄钟应进入可重新开始的默认状态。
-    clearPomodoroCompletion();
-    // 必须等主窗口收到跳转消息后再关闭悬浮窗；否则关闭 Webview 可能中断尚未完成的事件发送，
-    // 主窗口虽然被唤起，但只会停留在常规番茄钟页，无法自动打开对应行动的复盘弹框。
-    await notifyPomodoroChanged({ type: "open-review", actionId: completionResult?.actionId });
-    await closeFloatingWindow();
+    if (reviewNavigatingRef.current) return;
+    reviewNavigatingRef.current = true;
+    setReviewNavigating(true);
+    try {
+      savePomodoroReviewRequest(completionResult?.actionId);
+      await showMainWindow();
+      await notifyPomodoroChanged({ type: "open-review", actionId: completionResult?.actionId });
+      // 事件发送成功不代表主窗口已经接收，保留小窗口直到常驻入口消费请求。
+      const deadline = Date.now() + 8000;
+      while (hasPendingPomodoroReviewRequest()) {
+        if (Date.now() >= deadline) throw new Error("主窗口未能接收复盘请求，请重试");
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 100));
+      }
+      clearPomodoroCompletion();
+      await closeFloatingWindow();
+    } catch (cause) {
+      setError(userFacingError(cause));
+    } finally {
+      reviewNavigatingRef.current = false;
+      setReviewNavigating(false);
+    }
   };
 
   const startNewFocus = async () => {
@@ -265,7 +281,7 @@ export default function FloatingPomodoro() {
         <strong>恭喜完成专注</strong>
         <span>本次获得 {completionResult.points} 积分</span>
         <div className="pomodoro-floating-completion-actions">
-          <Button size="middle" onClick={() => void goToReview()}>去复盘</Button>
+          <Button size="middle" loading={reviewNavigating} onClick={() => void goToReview()}>去复盘</Button>
           <Button type="primary" size="middle" onClick={() => void startNewFocus()}>继续专注</Button>
         </div>
       </div> : active ? <>

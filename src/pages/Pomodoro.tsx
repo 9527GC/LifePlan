@@ -9,7 +9,7 @@ import { track } from "@/lib/analytics";
 import { closePomodoroFloatingWindow, isPomodoroFloatingWindowOpen, openPomodoroFloatingWindow, setFloatingPomodoroMode, showMainWindow } from "@/lib/pomodoroWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listenPomodoroChanged, notifyPomodoroChanged } from "@/lib/pomodoroSync";
-import { clearPomodoroCompletion, consumePomodoroReviewRequest, getPomodoroCompletion, getPomodoroWindowMode, savePomodoroCompletion, setPomodoroWindowMode } from "@/lib/pomodoroSession";
+import { clearPomodoroCompletion, getPomodoroCompletion, getPomodoroWindowMode, savePomodoroCompletion, setPomodoroWindowMode } from "@/lib/pomodoroSession";
 
 import TodayFocus from "@/components/TodayFocus";
 import PointsLedger from "@/components/PointsLedger";
@@ -330,25 +330,7 @@ export default function Pomodoro() {
     } catch { /* 忽略无效的临时预设 */ }
   }, []);
   useEffect(() => {
-    const resetFloatingCompletion = () => {
-      // 悬浮窗口跳转复盘时，主窗口仍可能保留 completed 事件写入的内存状态。
-      // 同时清除内存和持久化结果，确保回到番茄钟时显示默认状态。
-      clearPomodoroCompletion();
-      setCompletionResult(null);
-    };
-    const openReview = (actionId?: number) => {
-      consumePomodoroReviewRequest();
-      resetFloatingCompletion();
-      navigate("/daily-list", actionId ? { state: { reviewActionId: actionId } } : undefined);
-    };
-    const consumeReviewRequest = () => {
-      const request = consumePomodoroReviewRequest();
-      if (!request) return;
-      resetFloatingCompletion();
-      navigate("/daily-list", request.actionId ? { state: { reviewActionId: request.actionId } } : undefined);
-    };
     const handleFocus = () => {
-      consumeReviewRequest();
       void reconcileWindowMode();
       void syncPomodoroState();
     };
@@ -359,7 +341,6 @@ export default function Pomodoro() {
       if (message.type === "completed" && message.completion.completedAt >= prefillRequestedAtRef.current) {
         setCompletionResult({ points: message.completion.points, actionId: message.completion.actionId });
       }
-      if (message.type === "open-review") openReview(message.actionId);
       if (message.type !== "open-review") void load();
     }).then((cleanup) => { unlisten = cleanup; });
     return () => {

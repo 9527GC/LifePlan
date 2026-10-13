@@ -2698,6 +2698,13 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   margin-top: 14px;
   line-height: 1.8;
 }
+/* 工作日志提示与后续提示、编辑区之间留出间距，避免模块边框紧贴。 */
+.work-log-modal .ant-modal-body > .ant-alert + * {
+  margin-top: 14px;
+}
+.work-log-modal .ant-modal-body > .ant-alert {
+  flex-shrink: 0;
+}
 /* 所见即所得编辑器（TipTap / ProseMirror，无工具条） */
 .md-wysiwyg {
   box-sizing: border-box;

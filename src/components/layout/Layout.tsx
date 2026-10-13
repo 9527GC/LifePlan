@@ -1,12 +1,14 @@
 import { lazy, Suspense, useEffect, useState, type MouseEvent } from "react";
 import { availableMonitors, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import { loadWindowGeometry, saveWindowGeometry } from "@/lib/windowPreferences";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Archive, CalendarCheck, ArrowDown, Gift, HelpCircle, LoaderCircle, Minus, Square, Timer, X } from "lucide-react";
 import { Layout as AntLayout, Menu, message, Tooltip } from "antd";
 import LoadingState from "@/components/ui/LoadingState";
 import { exportAnalyticsLog, track } from "@/lib/analytics";
 import { checkForUpdate, installUpdate, type AvailableUpdate } from "@/lib/updater";
+import { clearPomodoroCompletion, consumePomodoroReviewRequest } from "@/lib/pomodoroSession";
+import { listenPomodoroChanged } from "@/lib/pomodoroSync";
 const FeedbackModal = lazy(() => import("@/components/ui/FeedbackModal"));
 
 const navItems = [
@@ -48,6 +50,33 @@ const quotes = [
 
 export default function Layout() {
   const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    // 事件、焦点及启动补查共用常驻入口，消费一次后不再重复跳转。
+    const openPendingReview = () => {
+      if (disposed) return;
+      const request = consumePomodoroReviewRequest();
+      if (!request) return;
+      clearPomodoroCompletion();
+      const now = new Date();
+      const date = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
+      navigate("/daily-list", { state: { date, reviewActionId: request.actionId } });
+    };
+    window.addEventListener("focus", openPendingReview);
+    void listenPomodoroChanged((event) => {
+      if (event.type === "open-review") openPendingReview();
+    }).then((cleanup) => {
+      if (disposed) cleanup();
+      else { unlisten = cleanup; openPendingReview(); }
+    });
+    return () => {
+      disposed = true;
+      window.removeEventListener("focus", openPendingReview);
+      unlisten?.();
+    };
+  }, [navigate]);
   const [logoClicks, setLogoClicks] = useState<number[]>([]);
   const [quote, setQuote] = useState(() => quotes[Math.floor(Math.random() * quotes.length)]);
   const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);

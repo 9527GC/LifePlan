@@ -107,8 +107,9 @@ export const openPomodoroFloatingWindow = async (): Promise<OpenFloatingPomodoro
 
 export const showMainWindow = async () => {
   if (!isTauriRuntime()) return;
+  await invoke("ensure_main_window");
   const main = await WebviewWindow.getByLabel("main");
-  if (!main) return;
+  if (!main) throw new Error("无法恢复主窗口，请重试");
   if (await main.isMinimized()) await main.unminimize();
   await setFloatingPomodoroMode(false);
   await main.show();

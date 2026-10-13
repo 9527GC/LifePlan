@@ -93,7 +93,7 @@ pub fn app_data_dir() -> Result<PathBuf, DbError> {
     Ok(base.join(channel_data_folder()))
 }
 
-fn channel_data_folder() -> String {
+pub(crate) fn channel_data_folder() -> String {
     channel_data_folder_for(option_env!("LIFEPLAN_BUILD_ENV"))
 }
 

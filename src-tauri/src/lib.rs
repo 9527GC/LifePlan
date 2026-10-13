@@ -17,12 +17,35 @@ const QUIT_MENU_ID: &str = "quit";
 pub mod commands;
 pub mod db;
 pub mod models;
+mod runtime_config;
 
 fn restore_regular_app_policy(app: &tauri::AppHandle) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Regular)?;
     #[cfg(not(target_os = "macos"))]
     let _ = app;
+    Ok(())
+}
+
+#[tauri::command]
+fn ensure_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    if app.get_webview_window(MAIN_WINDOW_LABEL).is_none() {
+        let config = app.config().app.windows.iter()
+            .find(|config| config.label == MAIN_WINDOW_LABEL)
+            .ok_or_else(|| "找不到主窗口配置".to_string())?;
+        let window = tauri::WebviewWindowBuilder::from_config(&app, config)
+            .map_err(|error| format!("恢复主窗口失败：{error}"))?
+            .build().map_err(|error| format!("创建主窗口失败：{error}"))?;
+        let window_for_close = window.clone();
+        window.on_window_event(move |event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                if let Err(error) = window_for_close.hide() {
+                    eprintln!("隐藏主窗口失败：{error}");
+                }
+            }
+        });
+    }
     Ok(())
 }
 
@@ -93,6 +116,13 @@ fn handle_startup_db_error(error: &db::DbError) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 在窗口和插件初始化前隔离构建渠道，生产版保留原标识及已有 WebView 配置。
+    let mut context = tauri::generate_context!();
+    context.config_mut().identifier = runtime_config::channel_identifier(
+        &context.config().identifier,
+        &db::channel_data_folder(),
+    );
+
     let app_state = match init_db() {
         Ok(state) => state,
         Err(error) => {
@@ -169,6 +199,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            ensure_main_window,
             analytics::record_analytics_event,
             analytics::export_analytics_events,
             events::get_events,
@@ -238,7 +269,7 @@ pub fn run() {
             system::save_download_text_file,
             system::set_floating_pomodoro_mode,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application");
 
     // macOS：主窗口被关闭（实际为隐藏）后，点击 Dock 图标会触发 Reopen 事件。

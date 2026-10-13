@@ -43,6 +43,9 @@ export const savePomodoroReviewRequest = (actionId?: number) => {
   localStorage.setItem(REVIEW_REQUEST_KEY, JSON.stringify({ actionId }));
 };
 
+export const hasPendingPomodoroReviewRequest = () =>
+  localStorage.getItem(REVIEW_REQUEST_KEY) !== null;
+
 export const consumePomodoroReviewRequest = (): { actionId?: number } | null => {
   const raw = localStorage.getItem(REVIEW_REQUEST_KEY);
   localStorage.removeItem(REVIEW_REQUEST_KEY);

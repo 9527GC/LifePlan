@@ -203,17 +203,28 @@ export default function DailyList() {
     if (routeState?.date) {
       const canShowSuggestions = shouldShowReviewSuggestions(routeState);
       setShowReviewSuggestions(canShowSuggestions);
-      if (routeState.date !== date) setDate(routeState.date);
-      navigate(location.pathname, { replace: true, state: null });
-      return;
+      if (routeState.date !== date) {
+        setDate(routeState.date);
+        return;
+      }
+      // 日期与复盘参数可同时传入，日程加载完成前保留行动请求。
+      if (!routeState.reviewActionId) {
+        navigate(location.pathname, { replace: true, state: null });
+        return;
+      }
     }
     const reviewActionId = routeState?.reviewActionId;
-    if (!reviewActionId || loading || !schedule || date !== today()) return;
+    if (!reviewActionId || loading || !schedule || schedule.list_date !== date) return;
     const reviewSlot = schedule.slots.find(
       (slot) =>
         slot.action_id === reviewActionId || slot.action?.id === reviewActionId,
     );
-    if (reviewSlot) setSelectedSlot(reviewSlot);
+    if (reviewSlot) {
+      setPickerSlot(null);
+      setSelectedSlot(reviewSlot);
+    } else {
+      message.warning("该行动未安排在当前日期，无法打开对应时间段复盘，请检查日程安排");
+    }
     navigate(location.pathname, { replace: true, state: null });
   }, [date, loading, location.pathname, location.state, navigate, schedule]);
   const slots = schedule?.slots ?? [];
