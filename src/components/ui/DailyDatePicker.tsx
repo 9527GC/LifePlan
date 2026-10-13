@@ -1,5 +1,6 @@
 import dayjs from "dayjs";
-import { DatePicker, Tag, Typography } from "antd";
+import { Button, DatePicker, Tag, Typography } from "antd";
+import { RotateCcw } from "lucide-react";
 
 const weekdayNames = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
 
@@ -22,7 +23,20 @@ export default function DailyDatePicker({
 
   return (
     <div className="daily-date-panel">
-      {isToday && <Tag color="blue" className="daily-today-tag">今天</Tag>}
+      {isToday ? (
+        <Tag color="blue" className="daily-today-tag">今天</Tag>
+      ) : (
+        <Button
+          color="primary"
+          variant="text"
+          size="small"
+          className="daily-back-today-button"
+          icon={<RotateCcw size={14} />}
+          onClick={() => onChange(dayjs().format("YYYY-MM-DD"))}
+        >
+          今天
+        </Button>
+      )}
       <DatePicker
         className="daily-date-picker"
         value={dayjs(date)}

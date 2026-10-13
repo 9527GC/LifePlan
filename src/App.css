@@ -241,6 +241,10 @@ body.pomodoro-floating-mode .app-shell {
 .daily-today-tag.ant-tag {
   margin: 0;
 }
+.daily-back-today-button.ant-btn {
+  margin-right: -6px;
+  gap: 4px;
+}
 .daily-date-picker-cell {
   position: relative;
   display: flex;
