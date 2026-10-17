@@ -5243,10 +5243,11 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   background: linear-gradient(180deg, #fff 0%, #fafcff 100%);
 }
 .review-execution-trace-heading {
-  display: flex;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 3px 12px;
 }
 .review-execution-trace-heading strong {
   display: block;
@@ -5254,14 +5255,15 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   font-size: 15px;
   font-weight: 650;
 }
-.review-execution-trace-heading > div > span {
+.review-execution-trace-description {
+  grid-column: 1 / -1;
   display: block;
-  margin-top: 3px;
   color: #98a3b7;
   font-size: 12px;
 }
 .review-execution-trace-count {
-  flex: 0 0 auto;
+  grid-column: 2;
+  grid-row: 1;
   padding: 3px 9px;
   border-radius: 999px;
   color: #2777d9;

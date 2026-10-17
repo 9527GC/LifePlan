@@ -474,14 +474,12 @@ export default function DailyReviewDemo() {
             <ReviewEqualHeight key={date}>
             <div className="review-execution-trace">
               <div className="review-execution-trace-heading">
-                <div>
-                  <strong>今日执行轨迹</strong>
-                  <span>
-                    时间段复盘记录，标记执行偏差，帮助明日优化安排。
-                  </span>
-                </div>
+                <strong>今日执行轨迹</strong>
                 <span className="review-execution-trace-count">
                   {schedule?.slots?.length || 0} 段
+                </span>
+                <span className="review-execution-trace-description">
+                  时间段复盘记录，标记执行偏差，帮助明日优化安排。
                 </span>
               </div>
               {schedule?.slots?.length ? (
@@ -565,10 +563,10 @@ export default function DailyReviewDemo() {
             </div>
             <section className="review-focus-distribution" aria-label="今日专注分布">
               <div className="review-execution-trace-heading">
-                <div>
-                  <strong>今日专注分布</strong>
-                  <span>番茄钟专注与休息记录，对照执行轨迹回顾时间投入。</span>
-                </div>
+                <strong>今日专注分布</strong>
+                <span className="review-execution-trace-description">
+                  番茄钟专注与休息记录，对照执行轨迹回顾时间投入。
+                </span>
               </div>
               <div className="review-focus-body">
                 <TodayFocus key={date} recordOrder="asc" records={focusRecords} slots={schedule?.slots ?? []} now={date === localDate(new Date(clock)) ? clock : new Date(`${date}T23:59:59.999`).getTime()} />
