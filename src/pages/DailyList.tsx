@@ -53,6 +53,7 @@ import DailyDatePicker from "@/components/ui/DailyDatePicker";
 import FrogHelp from "@/components/ui/FrogHelp";
 import WorkLogModal from "@/components/ui/WorkLogModal";
 import { track } from "@/lib/analytics";
+import { sortEventActions } from "@/lib/eventActionSort";
 import { sortDailyActions } from "@/lib/dailyActionSort";
 import { sortByPriority } from "@/lib/prioritySort";
 import { REVIEW_REASON_BY_CODE, REVIEW_REASON_OPTIONS, type ReviewReasonCode } from "@/lib/reviewReasons";
@@ -1125,7 +1126,6 @@ function ActionPickerModal({
         description: action.description,
         estimated_hours: action.estimated_hours,
         start_date: action.start_date,
-        deadline: action.deadline,
         is_frog: checked ? 1 : 0,
         importance: action.importance,
         urgency: action.urgency,
@@ -1142,9 +1142,8 @@ function ActionPickerModal({
 
   const openDateAdjustment = (action: Action) => {
     // 固定打开时的完整事件顺序，搜索结果不影响联动范围。
-    const eventActions = selectableActions.filter((item) => item.event_id === action.event_id)
-      .sort((a, b) => a.sort_order - b.sort_order || a.created_at - b.created_at || a.id - b.id);
-    const ordered = actionView === "flat" ? sortDailyActions(eventActions) : eventActions;
+    const eventActions = selectableActions.filter((item) => item.event_id === action.event_id);
+    const ordered = actionView === "flat" ? sortDailyActions(eventActions) : sortEventActions(eventActions);
     setDateAdjustment({ action, following: ordered.slice(ordered.findIndex((item) => item.id === action.id) + 1) });
   };
   const performAssign = async (
@@ -1901,9 +1900,7 @@ function EventActionPicker({
       }, [])
       .map((group) => ({
         ...group,
-        actions: [...group.actions].sort(
-          (left, right) => left.sort_order - right.sort_order || left.created_at - right.created_at || left.id - right.id,
-        ),
+        actions: sortEventActions(group.actions),
       })),
   );
   return (
@@ -2060,9 +2057,6 @@ function ActionPreview({
             {action.start_date && (
           <Tag color="default">开始：{action.start_date}</Tag>
             )}
-            {action.deadline && (
-          <Tag color="default">截止：{action.deadline}</Tag>
-            )}
           </>
         ) : (
           <>
@@ -2084,10 +2078,10 @@ function ActionPreview({
         )}
         {action.is_frog === 1 && <Tag color="green">青蛙</Tag>}
       </div>
-      {!hideEventActionMeta && (action.start_date || action.deadline) && (
+      {!hideEventActionMeta && (action.start_date || action.event_deadline) && (
         <div className="daily-action-preview-dates">
           {action.start_date && <span>开始：{action.start_date}</span>}
-          {action.deadline && <span>截止：{action.deadline}</span>}
+          {action.event_deadline && <span>事件截止：{action.event_deadline}</span>}
         </div>
       )}
       {eventLabel && !hideEventRelation && (

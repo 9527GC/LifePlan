@@ -19,7 +19,7 @@ fn row_to_action(row: &rusqlite::Row) -> rusqlite::Result<Action> {
         description: row.get(6)?,
         estimated_hours: row.get(7)?,
         start_date: row.get(8)?,
-        deadline: row.get(9)?,
+        event_deadline: row.get(9)?,
         is_frog: row.get(10)?,
         importance: row.get(11)?,
         urgency: row.get(12)?,
@@ -39,7 +39,7 @@ fn to_sql_error(e: crate::db::DbError) -> rusqlite::Error {
 pub fn list_actions(conn: &Connection) -> rusqlite::Result<Vec<Action>> {
     super::events::restore_due_delays(conn)?;
     let space = current_space_id(conn).map_err(to_sql_error)?;
-    let mut q=conn.prepare("SELECT a.id,a.event_id,e.title,e.delegated_to,e.status,a.title,a.description,a.estimated_hours,a.start_date,a.deadline,a.is_frog,a.importance,a.urgency,a.priority,a.status,a.completed_at,a.is_delegated_follow_up,a.cascade_abandoned,a.sort_order,a.created_at,a.updated_at FROM actions a LEFT JOIN events e ON e.id=a.event_id AND e.space_id=a.space_id AND e.deleted_at IS NULL WHERE a.space_id=?1 AND a.deleted_at IS NULL ORDER BY CASE WHEN a.event_id IS NULL THEN 1 ELSE 0 END,a.start_date IS NULL,a.start_date,a.sort_order,a.id")?;
+    let mut q=conn.prepare("SELECT a.id,a.event_id,e.title,e.delegated_to,e.status,a.title,a.description,a.estimated_hours,a.start_date,e.deadline,a.is_frog,a.importance,a.urgency,a.priority,a.status,a.completed_at,a.is_delegated_follow_up,a.cascade_abandoned,a.sort_order,a.created_at,a.updated_at FROM actions a LEFT JOIN events e ON e.id=a.event_id AND e.space_id=a.space_id AND e.deleted_at IS NULL WHERE a.space_id=?1 AND a.deleted_at IS NULL ORDER BY CASE WHEN a.event_id IS NULL THEN 1 ELSE 0 END,a.start_date IS NULL,a.start_date,a.sort_order,a.id")?;
     let result = q.query_map([space], row_to_action)?.collect();
     result
 }
@@ -53,9 +53,28 @@ fn validate(p: &NewAction) -> Result<(), String> {
     if !valid_hours(p.estimated_hours) {
         return Err("行动耗时必须为空、30 分钟、1 小时、1.5 小时或 2 小时".into());
     }
-    if let (Some(start_date), Some(deadline)) = (&p.start_date, &p.deadline) {
-        if start_date > deadline {
-            return Err("截止日期不能早于开始日期".into());
+    Ok(())
+}
+// 截止日期只属于事件，行动的历史截止日期不再参与校验。
+fn validate_event_start_date(
+    conn: &Connection,
+    space: &str,
+    event_id: Option<i64>,
+    start_date: &Option<String>,
+) -> Result<(), String> {
+    if let (Some(event_id), Some(start_date)) = (event_id, start_date) {
+        let deadline: Option<String> = conn
+            .query_row(
+                "SELECT deadline FROM events WHERE id=?1 AND space_id=?2 AND deleted_at IS NULL",
+                params![event_id, space],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if deadline
+            .as_ref()
+            .is_some_and(|deadline| start_date > deadline)
+        {
+            return Err("行动开始日期不能晚于事件截止日期".into());
         }
     }
     Ok(())
@@ -82,13 +101,14 @@ pub fn create_action(state: State<'_, AppState>, payload: NewAction) -> Result<A
             return Err("只有进行中的事件可以新增行动".into());
         }
     }
+    validate_event_start_date(&c, &space, payload.event_id, &payload.start_date)?;
     let now = now_millis();
     let order: i64 = if let Some(event) = payload.event_id {
         c.query_row("SELECT COALESCE(MAX(sort_order),0)+1 FROM actions WHERE event_id=?1 AND space_id=?2 AND deleted_at IS NULL",params![event,space],|r|r.get(0)).map_err(|e|e.to_string())?
     } else {
         0
     };
-    c.execute("INSERT INTO actions (space_id,sync_id,event_id,title,description,estimated_hours,start_date,deadline,is_frog,importance,urgency,priority,sort_order,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?14)",params![space,new_uuid(),payload.event_id,payload.title.trim(),payload.description,payload.estimated_hours,payload.start_date,payload.deadline,payload.is_frog,payload.importance,payload.urgency,calculate_priority(payload.importance,payload.urgency),order,now]).map_err(|e|e.to_string())?;
+    c.execute("INSERT INTO actions (space_id,sync_id,event_id,title,description,estimated_hours,start_date,deadline,is_frog,importance,urgency,priority,sort_order,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?14)",params![space,new_uuid(),payload.event_id,payload.title.trim(),payload.description,payload.estimated_hours,payload.start_date,Option::<String>::None,payload.is_frog,payload.importance,payload.urgency,calculate_priority(payload.importance,payload.urgency),order,now]).map_err(|e|e.to_string())?;
     let id = c.last_insert_rowid();
     list_actions(&c)
         .map_err(|e| e.to_string())?
@@ -104,7 +124,6 @@ pub fn update_action(state: State<'_, AppState>, payload: UpdateAction) -> Resul
         description: payload.description.clone(),
         estimated_hours: payload.estimated_hours,
         start_date: payload.start_date.clone(),
-        deadline: payload.deadline.clone(),
         is_frog: payload.is_frog,
         importance: payload.importance,
         urgency: payload.urgency,
@@ -119,7 +138,15 @@ pub fn update_action(state: State<'_, AppState>, payload: UpdateAction) -> Resul
     if event_status == Some(3) {
         return Err("推迟事件的行动不能编辑".into());
     }
-    let n = c.execute("UPDATE actions SET title=?1,description=?2,estimated_hours=?3,start_date=?4,deadline=?5,is_frog=?6,importance=?7,urgency=?8,priority=?9,updated_at=?10 WHERE id=?11 AND space_id=?12 AND deleted_at IS NULL", params![payload.title.trim(), payload.description, payload.estimated_hours, payload.start_date, payload.deadline, payload.is_frog, payload.importance, payload.urgency, calculate_priority(payload.importance, payload.urgency), now_millis(), payload.id, space]).map_err(|e| e.to_string())?;
+    let event_id: Option<i64> = c
+        .query_row(
+            "SELECT event_id FROM actions WHERE id=?1 AND space_id=?2 AND deleted_at IS NULL",
+            params![payload.id, space],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    validate_event_start_date(&c, &space, event_id, &payload.start_date)?;
+    let n = c.execute("UPDATE actions SET title=?1,description=?2,estimated_hours=?3,start_date=?4,deadline=?5,is_frog=?6,importance=?7,urgency=?8,priority=?9,updated_at=?10 WHERE id=?11 AND space_id=?12 AND deleted_at IS NULL", params![payload.title.trim(), payload.description, payload.estimated_hours, payload.start_date, Option::<String>::None, payload.is_frog, payload.importance, payload.urgency, calculate_priority(payload.importance, payload.urgency), now_millis(), payload.id, space]).map_err(|e| e.to_string())?;
     if n == 0 {
         return Err("行动不存在".into());
     }
@@ -323,11 +350,11 @@ pub fn adjust_action_start_dates(
                 return Err("开始日期格式无效".into());
             }
             if action
-                .deadline
+                .event_deadline
                 .as_ref()
                 .is_some_and(|deadline| date > deadline)
             {
-                return Err(format!("{}：开始日期不能晚于截止日期", action.title));
+                return Err(format!("{}：开始日期不能晚于事件截止日期", action.title));
             }
         }
     }
@@ -375,4 +402,38 @@ pub fn get_action_scheduled_start_dates(
         .into_iter()
         .filter(|item| ids.contains(&item.action_id))
         .collect())
+}
+
+#[cfg(test)]
+mod deadline_tests {
+    use super::*;
+
+    #[test]
+    fn 期限跟随事件且忽略行动历史值() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(crate::db::migrations::INIT_MIGRATION)
+            .unwrap();
+        let space = crate::db::ensure_current_space(&mut conn).unwrap();
+        conn.execute("INSERT INTO events (id, space_id, sync_id, title, status, deadline, created_at, updated_at) VALUES (1, ?1, 'event', '测试事件', 1, '2026-11-30', 1, 1)", [&space]).unwrap();
+        conn.execute("INSERT INTO actions (space_id, sync_id, event_id, title, deadline, created_at, updated_at) VALUES (?1, 'action', 1, '测试行动', '2026-10-01', 1, 1)", [&space]).unwrap();
+        assert_eq!(
+            list_actions(&conn).unwrap()[0].event_deadline.as_deref(),
+            Some("2026-11-30")
+        );
+        let start = Some("2026-11-15".to_owned());
+        assert!(validate_event_start_date(&conn, &space, Some(1), &start).is_ok());
+        conn.execute("UPDATE events SET deadline='2026-11-01' WHERE id=1", [])
+            .unwrap();
+        assert_eq!(
+            list_actions(&conn).unwrap()[0].event_deadline.as_deref(),
+            Some("2026-11-01")
+        );
+        assert!(validate_event_start_date(&conn, &space, Some(1), &start).is_err());
+        conn.execute("UPDATE events SET deadline=NULL WHERE id=1", [])
+            .unwrap();
+        assert!(list_actions(&conn).unwrap()[0].event_deadline.is_none());
+        assert!(validate_event_start_date(&conn, &space, Some(1), &start).is_ok());
+        assert!(validate_event_start_date(&conn, &space, None, &start).is_ok());
+        assert!(validate_event_start_date(&conn, &space, Some(1), &None).is_ok());
+    }
 }

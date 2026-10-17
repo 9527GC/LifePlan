@@ -51,6 +51,7 @@ import { userFacingError } from "@/lib/errors";
 import DatePickerWithWeekday from "@/components/ui/DatePickerWithWeekday";
 import Modal from "@/components/ui/Modal";
 import { track } from "@/lib/analytics";
+import { sortEventActions } from "@/lib/eventActionSort";
 import { sortByPriority } from "@/lib/prioritySort";
 
 const statusLabels: Record<number, string> = {
@@ -130,37 +131,6 @@ const formatDuration = (value: number) =>
   value === 0 ? "未设置预计耗时" : value === 0.5 ? "30分钟" : `${value}小时`;
 const formatCompletedDate = (timestamp: number) =>
   `${dayjs(timestamp).format("YYYY-MM-DD")}完成`;
-const sortEventActions = (actions: Action[]) => {
-  const byStoredOrder = [...actions].sort((left, right) => {
-    const leftOrder =
-      (left.sort_order ?? 0) > 0 ? left.sort_order : Number.MAX_SAFE_INTEGER;
-    const rightOrder =
-      (right.sort_order ?? 0) > 0 ? right.sort_order : Number.MAX_SAFE_INTEGER;
-    return leftOrder !== rightOrder
-      ? leftOrder - rightOrder
-      : left.created_at - right.created_at || left.id - right.id;
-  });
-  const positionById = new Map(
-    byStoredOrder.map((action, index) => [action.id, index]),
-  );
-  const datedActions = byStoredOrder
-    .filter((action) => action.start_date)
-    .sort((left, right) => {
-      const dateCompare = left.start_date!.localeCompare(right.start_date!);
-      return dateCompare !== 0
-        ? dateCompare
-        : (positionById.get(left.id) ?? 0) -
-            (positionById.get(right.id) ?? 0);
-    });
-
-  let datedIndex = 0;
-  return byStoredOrder.map((action) => {
-    // 未设置开始日期的行动固定在其原有位置；仅让有日期的行动按日期填入其余位置。
-    // 因此清空日期不会把行动自动移到列表末尾，同日行动仍可按手动顺序排列。
-    if (!action.start_date) return action;
-    return datedActions[datedIndex++];
-  });
-};
 type ProcessMode = "self" | "delegate" | "delay" | "abandon";
 type InboxTab =
   "pending" | "events" | "delegated" | "delayed" | "abandoned" | "completed";
@@ -1174,9 +1144,9 @@ function EventActionList({
                   {formatCompletedDate(action.completed_at)}
                 </span>
               )}
-              {action.deadline && (
+              {action.event_deadline && (
                 <span className="action-detail-meta">
-                  截止 {action.deadline}
+                  事件截止 {action.event_deadline}
                 </span>
               )}
               {action.description && (
@@ -1275,9 +1245,6 @@ function EventActionModal({
             start_date: data.action.start_date
               ? dayjs(data.action.start_date)
               : undefined,
-            deadline: data.action.deadline
-              ? dayjs(data.action.deadline)
-              : undefined,
             is_frog: data.action.is_frog === 1,
           }
         : { is_frog: false },
@@ -1287,7 +1254,7 @@ function EventActionModal({
   const submit = async (values: Record<string, unknown>) => {
     const startDate = toDateString(values.start_date as Dayjs | string | undefined);
     if (startDate && data.event.deadline && startDate > data.event.deadline) {
-      message.warning("不可晚于截止日期");
+      message.warning("行动开始日期不可晚于事件截止日期");
       return;
     }
     const payload = {
@@ -1296,7 +1263,6 @@ function EventActionModal({
       description: data.action?.description,
       estimated_hours: Number(values.estimated_hours || 0),
       start_date: startDate,
-      deadline: toDateString(values.deadline as Dayjs | string | undefined),
       is_frog: values.is_frog ? 1 : 0,
       importance: data.event.importance ?? 1,
       urgency: data.event.urgency ?? 0,

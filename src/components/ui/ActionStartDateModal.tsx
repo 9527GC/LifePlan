@@ -139,8 +139,8 @@ export default function ActionStartDateModal({
                   <span
                     className={
                       item.date &&
-                      item.action.deadline &&
-                      item.date > item.action.deadline
+                      item.action.event_deadline &&
+                      item.date > item.action.event_deadline
                         ? "action-start-date-conflict"
                         : ""
                     }
@@ -167,11 +167,11 @@ export default function ActionStartDateModal({
               <Alert
                 type="error"
                 showIcon
-                title="开始日期不能晚于截止日期"
+                title="开始日期不能晚于事件截止日期"
                 description={conflicts
                   .map(
                     (item) =>
-                      `${item.action.title}（截止 ${item.action.deadline}）`,
+                      `${item.action.title}（事件截止 ${item.action.event_deadline}）`,
                   )
                   .join("、")}
               />

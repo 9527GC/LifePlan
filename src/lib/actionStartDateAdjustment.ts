@@ -44,7 +44,7 @@ export function planStartDateAdjustment(
     ),
     conflicts: preview.filter(
       (item) =>
-        item.date && item.action.deadline && item.date > item.action.deadline,
+        item.date && item.action.event_deadline && item.date > item.action.event_deadline,
     ),
     skipped:
       cascade && canCascade && newDate !== null

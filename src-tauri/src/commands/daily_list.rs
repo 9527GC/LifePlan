@@ -16,7 +16,7 @@ fn row_to_action(row: &rusqlite::Row, offset: usize) -> rusqlite::Result<Action>
         description: row.get(offset + 5)?,
         estimated_hours: row.get(offset + 6)?,
         start_date: row.get(offset + 7)?,
-        deadline: row.get(offset + 8)?,
+        event_deadline: row.get(offset + 8)?,
         is_frog: row.get(offset + 9)?,
         importance: row.get(offset + 10)?,
         urgency: row.get(offset + 11)?,
@@ -37,7 +37,7 @@ fn list_items(conn: &Connection, list_date: &str) -> rusqlite::Result<Vec<DailyL
     let mut statement = conn.prepare(
         "SELECT d.id, d.action_id, d.list_date, d.sort_order,
                 a.id, a.event_id, e.title, e.delegated_to,
-                a.title, a.description, a.estimated_hours, a.start_date, a.deadline,
+                a.title, a.description, a.estimated_hours, a.start_date, e.deadline,
                 a.is_frog, a.importance, a.urgency,
                 a.priority, a.status, a.completed_at,
                 a.is_delegated_follow_up, a.cascade_abandoned, COALESCE(a.sort_order, 0),

@@ -72,8 +72,14 @@ test("已完成和其他事件的行动不会参与联动", () => {
     1,
   );
 });
-test("标出联动行动的截止日期冲突，清空不会冲突", () => {
-  const list = [action(2, "2026-10-12", { deadline: "2026-10-14" })];
+test("标出联动行动的事件截止日期冲突，清空不会冲突", () => {
+  const list = [action(2, "2026-10-12", { event_deadline: "2026-10-14" })];
   assert.equal(plan(current, list, "2026-10-13", true).conflicts.length, 1);
   assert.equal(plan(current, list, null, true).conflicts.length, 0);
+});
+
+test("事件延期或取消期限后不受行动历史截止日期限制", () => {
+  const legacy = action(1, "2026-10-10", { deadline: "2026-10-11", event_deadline: "2026-11-30" });
+  assert.equal(plan(legacy, [], "2026-11-15", false).conflicts.length, 0);
+  assert.equal(plan({ ...legacy, event_deadline: undefined }, [], "2026-12-15", false).conflicts.length, 0);
 });

@@ -39,7 +39,7 @@ export interface Action {
   description?: string;
   estimated_hours: number;
   start_date?: string;
-  deadline?: string;
+  event_deadline?: string;
   is_frog: number;
   importance: number;
   urgency: number;
@@ -101,7 +101,6 @@ export interface NewAction {
   description?: string;
   estimated_hours: number;
   start_date?: string;
-  deadline?: string;
   is_frog: number;
   importance: number;
   urgency: number;
