@@ -1262,6 +1262,7 @@ function ActionPickerModal({
         schedule_type: payload.schedule_type,
         schedule_days: payload.schedule_days,
         start_time: payload.start_time,
+        schedule_start_date: payload.schedule_start_date,
       };
       const created = await recurringActionsApi.create(newPayload);
       setRecurringActions((current) => [...current, created]);
@@ -2213,7 +2214,10 @@ function NewRecurringActionForm({
           importance: 0,
           urgency: 0,
           frequency_unit: values.schedule_type,
-          frequency_count: 1,
+          frequency_count: values.schedule_type === "monthly" ? 1 : Number(values.frequency_count),
+          schedule_start_date: values.schedule_type === "monthly"
+            ? ""
+            : values.schedule_start_date.format("YYYY-MM-DD"),
           auto_schedule: 1,
           schedule_type: values.schedule_type,
           schedule_days: (values.schedule_days ?? []).join(","),
