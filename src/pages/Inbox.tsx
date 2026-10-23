@@ -135,6 +135,10 @@ type ProcessMode = "self" | "delegate" | "delay" | "abandon";
 type InboxTab =
   "pending" | "events" | "delegated" | "delayed" | "abandoned" | "completed";
 
+const isEventReadyToComplete = (event: Event) =>
+  event.action_count > 0 &&
+  event.completed_action_count === event.action_count;
+
 export default function Inbox() {
   const [events, setEvents] = useState<Event[]>([]);
   const [actions, setActions] = useState<Action[]>([]);
@@ -246,12 +250,14 @@ export default function Inbox() {
       });
     }
     if (filter !== "events") return filtered;
-    // 进行中事件按 P1、P2、P3、P4 排列；优先级数值越小越靠前。
+    // 待完成事件优先展示，各组内仍按 P1、P2、P3、P4 排列。
     return sortByPriority(
       filtered.map((event) => ({
         ...event,
         priority: 4 - ((event.importance ?? 1) * 2 + (event.urgency ?? 0)),
       })),
+    ).sort((left, right) =>
+      Number(isEventReadyToComplete(right)) - Number(isEventReadyToComplete(left)),
     );
   }, [events, filter]);
   const counts = useMemo(
@@ -719,17 +725,16 @@ function EventRow({
               </Button>
               {!readOnly && (
                 <>
-                  {item.completed_action_count === item.action_count &&
-                    item.action_count > 0 && (
-                      <Button
-                        size="small"
-                        type="primary"
-                        icon={<Check size={14} />}
-                        onClick={onComplete}
-                      >
-                        完成
-                      </Button>
-                    )}
+                  {isEventReadyToComplete(item) && (
+                    <Button
+                      size="small"
+                      type="primary"
+                      icon={<Check size={14} />}
+                      onClick={onComplete}
+                    >
+                      完成
+                    </Button>
+                  )}
                   <Button
                     size="small"
                     type="text"
