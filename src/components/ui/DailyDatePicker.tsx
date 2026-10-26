@@ -1,5 +1,6 @@
 import dayjs from "dayjs";
-import { Button, DatePicker, Tag, Typography } from "antd";
+import { Button, Tag, Typography } from "antd";
+import DatePickerWithWeekday from "./DatePickerWithWeekday";
 import { RotateCcw } from "lucide-react";
 
 const weekdayNames = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
@@ -37,7 +38,8 @@ export default function DailyDatePicker({
           今天
         </Button>
       )}
-      <DatePicker
+      <DatePickerWithWeekday
+        showWeekday={false}
         className="daily-date-picker"
         value={dayjs(date)}
         format="YYYY年MM月DD日"

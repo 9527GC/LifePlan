@@ -6,7 +6,6 @@ import {
   Button,
   Checkbox,
   Empty,
-  DatePicker,
   Form,
   Input,
   Modal as AntModal,
@@ -49,6 +48,7 @@ import type {
 } from "@/types";
 import { userFacingError } from "@/lib/errors";
 import ActionStartDateModal from "@/components/ui/ActionStartDateModal";
+import DatePickerWithWeekday from "@/components/ui/DatePickerWithWeekday";
 import DailyDatePicker from "@/components/ui/DailyDatePicker";
 import FrogHelp from "@/components/ui/FrogHelp";
 import WorkLogModal from "@/components/ui/WorkLogModal";
@@ -2287,7 +2287,7 @@ function NewRecurringActionForm({
           </Form.Item>
           <Form.Item name="schedule_start_date" label="开始日期" rules={[{ required: true, message: "请选择开始日期" }]}
           >
-            <DatePicker style={{ width: "100%" }} allowClear={false} />
+            <DatePickerWithWeekday style={{ width: "100%" }} allowClear={false} />
           </Form.Item>
         </div>
       )}

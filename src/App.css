@@ -4054,33 +4054,9 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
   line-height: 18px;
 }
 
-/* 事件拆解弹框：Ant Design 6 使用 ant-modal-container 作为内容容器。 */
-.process-action-modal-wrap.ant-modal-wrap {
-  inset: 0 !important;
-  box-sizing: border-box !important;
-  height: 100dvh !important;
-  padding: 16px 0 !important;
-  overflow: hidden !important;
-}
-.process-action-modal-wrap.ant-modal-wrap > .process-action-modal.ant-modal {
-  top: 0 !important;
-  box-sizing: border-box !important;
+/* 事件拆解弹框复用通用居中及自适应高度，正文使用内部滚动区以保留底部按钮。 */
+.process-action-modal.ant-modal {
   width: min(640px, calc(100vw - 32px)) !important;
-  height: calc(100dvh - 32px) !important;
-  max-height: calc(100dvh - 32px) !important;
-  margin: 0 auto !important;
-}
-.process-action-modal-wrap .process-action-modal .ant-modal-container {
-  box-sizing: border-box !important;
-  display: flex !important;
-  height: 100% !important;
-  max-height: 100% !important;
-  flex-direction: column !important;
-  overflow: hidden !important;
-}
-.process-action-modal-wrap .process-action-modal .ant-modal-header,
-.process-action-modal-wrap .process-action-modal .ant-modal-footer {
-  flex: 0 0 auto !important;
 }
 .process-action-modal-wrap .process-action-modal .ant-modal-body {
   box-sizing: border-box !important;
@@ -7263,3 +7239,11 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
 .work-log-save-feedback { min-width: 0; text-align: left; }
 .work-log-footer > .ant-space { margin-left: auto; }
 .work-log-footer .work-log-autosave-status { position: static; text-align: left; }
+
+/* 小窗口日期选择：复用通用弹框高度，仅日历区域滚动，输入区保持可见。 */
+.adaptive-date-trigger { display: contents; }
+.compact-date-modal .ant-modal-body { display: flex; flex-direction: column; overflow: hidden !important; }
+.compact-date-input { flex: 0 0 auto; padding-bottom: 12px; }
+.compact-date-input [role="alert"] { display: block; margin-top: 4px; color: #ff4d4f; font-size: 12px; }
+.compact-date-calendar { min-height: 0; overflow: auto; }
+.compact-date-calendar .ant-picker-calendar-header { flex-wrap: wrap; gap: 4px; }
