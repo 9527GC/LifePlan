@@ -630,6 +630,13 @@ mod tests {
 
     #[test]
     fn 自动安排包含开始时间的整段并在后续冲突处停止() {
+        // 测试日期始终在未来，避免历史日期跳过规则使固定日期用例失效。
+        let base = chrono::Local::now().date_naive() + chrono::Duration::days(1);
+        let day11 = (base + chrono::Duration::days(0)).format("%Y-%m-%d").to_string();
+        let day12 = (base + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+        let day13 = (base + chrono::Duration::days(2)).format("%Y-%m-%d").to_string();
+        let day14 = (base + chrono::Duration::days(3)).format("%Y-%m-%d").to_string();
+        let day15 = (base + chrono::Duration::days(4)).format("%Y-%m-%d").to_string();
         let mut conn = Connection::open_in_memory().expect("创建内存数据库失败");
         conn.execute_batch(migrations::INIT_MIGRATION)
             .expect("初始化数据库失败");
@@ -656,10 +663,10 @@ mod tests {
         )
         .expect("创建占位行动失败");
         let blocker_id = conn.last_insert_rowid();
-        crate::commands::daily_schedule::ensure_day(&conn, "2026-10-12")
+        crate::commands::daily_schedule::ensure_day(&conn, &format!("{day12}"))
             .expect("初始化当日日程失败");
         conn.execute(
-            "UPDATE daily_schedule_slots SET action_id = ?1 WHERE space_id = ?2 AND list_date = '2026-10-12' AND start_time = '08:00'",
+            &format!("UPDATE daily_schedule_slots SET action_id = ?1 WHERE space_id = ?2 AND list_date = '{day12}' AND start_time = '08:00'"),
             params![blocker_id, space_id],
         )
         .expect("占用冲突时间段失败");
@@ -671,7 +678,7 @@ mod tests {
         .expect("创建重复行动失败");
 
         // 存量模板尚未确认新版规则，不应按迁移默认值自动生成。
-        initialize_for_date(&mut conn, "2026-10-11", "app_start").expect("处理存量模板失败");
+        initialize_for_date(&mut conn, &format!("{day11}"), "app_start").expect("处理存量模板失败");
         let legacy_count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM actions WHERE title = '晨间行动'",
@@ -681,10 +688,10 @@ mod tests {
             .expect("检查存量模板实例失败");
         assert_eq!(legacy_count, 0);
         // 模拟用户在新版表单中确认保存。
-        conn.execute("UPDATE recurring_actions SET auto_schedule = 1, schedule_start_date = '2026-10-12'", [])
+        conn.execute(&format!("UPDATE recurring_actions SET auto_schedule = 1, schedule_start_date = '{day12}'"), [])
             .expect("确认重复规则失败");
 
-        initialize_for_date(&mut conn, "2026-10-11", "daily_review")
+        initialize_for_date(&mut conn, &format!("{day11}"), "daily_review")
             .expect("再次处理已初始化日期失败");
         let same_day_count: i64 = conn
             .query_row(
@@ -695,8 +702,8 @@ mod tests {
             .expect("检查当天补排失败");
         assert_eq!(same_day_count, 0, "旧模板确认后不应补排已处理日期");
 
-        initialize_for_date(&mut conn, "2026-10-12", "app_start").expect("首次自动安排失败");
-        initialize_for_date(&mut conn, "2026-10-12", "app_start").expect("重复自动安排失败");
+        initialize_for_date(&mut conn, &format!("{day12}"), "app_start").expect("首次自动安排失败");
+        initialize_for_date(&mut conn, &format!("{day12}"), "app_start").expect("重复自动安排失败");
 
         let generated_count: i64 = conn
             .query_row(
@@ -717,10 +724,10 @@ mod tests {
         let assigned: Vec<(String, String)> = {
             let mut statement = conn
                 .prepare(
-                    "SELECT start_time, end_time FROM daily_schedule_slots
-                     WHERE space_id = ?1 AND list_date = '2026-10-12'
+                    &format!("SELECT start_time, end_time FROM daily_schedule_slots
+                     WHERE space_id = ?1 AND list_date = '{day12}'
                        AND action_id = (SELECT id FROM actions WHERE title = '晨间行动')
-                     ORDER BY start_time",
+                     ORDER BY start_time"),
                 )
                 .expect("准备查询失败");
             let rows = statement
@@ -743,20 +750,20 @@ mod tests {
             [],
         )
         .expect("设置多个开始时间失败");
-        initialize_for_date(&mut conn, "2026-10-13", "app_start").expect("多时间自动安排失败");
-        initialize_for_date(&mut conn, "2026-10-13", "app_start").expect("重复初始化失败");
+        initialize_for_date(&mut conn, &format!("{day13}"), "app_start").expect("多时间自动安排失败");
+        initialize_for_date(&mut conn, &format!("{day13}"), "app_start").expect("重复初始化失败");
         let count: i64 = conn.query_row(
-            "SELECT COUNT(DISTINCT action_id) FROM daily_schedule_slots WHERE list_date = '2026-10-13' AND action_id IS NOT NULL",
+            &format!("SELECT COUNT(DISTINCT action_id) FROM daily_schedule_slots WHERE list_date = '{day13}' AND action_id IS NOT NULL"),
             [], |row| row.get(0),
         ).expect("查询多个行动实例失败");
         assert_eq!(count, 2);
         // 修改模板锚点，不触碰已经生成的日程和实例。
-        conn.execute("UPDATE recurring_actions SET schedule_type = 'daily', frequency_count = 2, schedule_start_date = '2026-10-14'", [])
+        conn.execute(&format!("UPDATE recurring_actions SET schedule_type = 'daily', frequency_count = 2, schedule_start_date = '{day14}'"), [])
             .expect("修改周期锚点失败");
-        initialize_for_date(&mut conn, "2026-10-13", "app_start").unwrap();
-        initialize_for_date(&mut conn, "2026-10-14", "app_start").unwrap();
-        initialize_for_date(&mut conn, "2026-10-15", "app_start").unwrap();
-        let counts: Vec<i64> = ["2026-10-13", "2026-10-14", "2026-10-15"].iter().map(|date| {
+        initialize_for_date(&mut conn, &format!("{day13}"), "app_start").unwrap();
+        initialize_for_date(&mut conn, &format!("{day14}"), "app_start").unwrap();
+        initialize_for_date(&mut conn, &format!("{day15}"), "app_start").unwrap();
+        let counts: Vec<i64> = [&format!("{day13}"), &format!("{day14}"), &format!("{day15}")].iter().map(|date| {
             conn.query_row("SELECT COUNT(DISTINCT action_id) FROM daily_schedule_slots WHERE list_date = ?1 AND action_id IS NOT NULL", [date], |row| row.get(0)).unwrap()
         }).collect();
         assert_eq!(counts, vec![2, 2, 0]);
