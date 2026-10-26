@@ -681,7 +681,7 @@ mod tests {
             .expect("检查存量模板实例失败");
         assert_eq!(legacy_count, 0);
         // 模拟用户在新版表单中确认保存。
-        conn.execute("UPDATE recurring_actions SET auto_schedule = 1", [])
+        conn.execute("UPDATE recurring_actions SET auto_schedule = 1, schedule_start_date = '2026-10-12'", [])
             .expect("确认重复规则失败");
 
         initialize_for_date(&mut conn, "2026-10-11", "daily_review")
