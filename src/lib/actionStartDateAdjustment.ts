@@ -1,4 +1,5 @@
 import dayjs from "dayjs";
+import { actionDeadlineWarning } from "./actionDeadline.ts";
 import type { Action } from "../types/index.ts";
 
 /** 使用打开弹框时的行动快照计算联动结果，不受保存后的排序影响。 */
@@ -42,9 +43,9 @@ export function planStartDateAdjustment(
     changes: preview.filter(
       (item) => (item.action.start_date || null) !== item.date,
     ),
-    conflicts: preview.filter(
+    deadlineWarnings: preview.filter(
       (item) =>
-        item.date && item.action.event_deadline && item.date > item.action.event_deadline,
+        actionDeadlineWarning(item.date, item.action.event_deadline),
     ),
     skipped:
       cascade && canCascade && newDate !== null

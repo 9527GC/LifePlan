@@ -315,16 +315,9 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
                 if ![0.0, 0.5, 1.0, 1.5, 2.0].contains(&step.estimated_hours) {
                     return Err("行动耗时必须为空、30 分钟、1 小时、1.5 小时或 2 小时".into());
                 }
-                if step.start_date.is_some()
-                    && payload.deadline.is_some()
-                    && step.start_date > payload.deadline
-                {
-                    return Err("行动开始日期不能晚于事件截止日期".into());
-                }
             }
             let importance = payload.importance.unwrap_or(1);
             let urgency = payload.urgency.unwrap_or(1);
-            validate_dates(&payload.start_date, &payload.deadline)?;
             for step in action_steps {
                 tx.execute("INSERT INTO actions (space_id, sync_id, event_id, title, estimated_hours, start_date, deadline, importance, urgency, priority, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)", params![space_id, new_uuid(), payload.event_id, step.title.trim(), step.estimated_hours, step.start_date.as_deref(), Option::<String>::None, importance, urgency, calculate_priority(importance, urgency), timestamp]).map_err(|error| error.to_string())?;
             }
@@ -412,14 +405,6 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
         _ => return Err("不支持的事件处理方式".into()),
     }
     tx.commit().map_err(|error| error.to_string())
-}
-
-fn validate_dates(start: &Option<String>, deadline: &Option<String>) -> Result<(), String> {
-    if start.is_some() && deadline.is_some() && start > deadline {
-        Err("截止日期不能早于开始日期".into())
-    } else {
-        Ok(())
-    }
 }
 
 pub(crate) fn abandon_event_tx(

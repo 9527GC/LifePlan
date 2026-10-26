@@ -51,6 +51,7 @@ import { userFacingError } from "@/lib/errors";
 import DatePickerWithWeekday from "@/components/ui/DatePickerWithWeekday";
 import Modal from "@/components/ui/Modal";
 import { track } from "@/lib/analytics";
+import { actionDeadlineWarning } from "@/lib/actionDeadline";
 import { sortEventActions } from "@/lib/eventActionSort";
 import { sortByPriority } from "@/lib/prioritySort";
 
@@ -1241,6 +1242,7 @@ function EventActionModal({
   onSaved: () => Promise<void>;
 }) {
   const [form] = Form.useForm();
+  const selectedStartDate = Form.useWatch("start_date", form) as Dayjs | undefined;
   useEffect(() => {
     form.setFieldsValue(
       data?.action
@@ -1252,16 +1254,13 @@ function EventActionModal({
               : undefined,
             is_frog: data.action.is_frog === 1,
           }
-        : { is_frog: false },
+        : { is_frog: false, start_date: undefined },
     );
   }, [data, form]);
   if (!data) return null;
+  const deadlineWarning = actionDeadlineWarning(toDateString(selectedStartDate), data.event.deadline);
   const submit = async (values: Record<string, unknown>) => {
     const startDate = toDateString(values.start_date as Dayjs | string | undefined);
-    if (startDate && data.event.deadline && startDate > data.event.deadline) {
-      message.warning("行动开始日期不可晚于事件截止日期");
-      return;
-    }
     const payload = {
       title: values.title as string,
       // 描述不再在此弹框编辑，避免保存时清空已有的历史描述。
@@ -1309,6 +1308,9 @@ function EventActionModal({
             <DatePickerWithWeekday className="full-width" format="YYYY-MM-DD" />
           </Form.Item>
         </div>
+        {deadlineWarning && (
+          <Alert type="warning" showIcon title={deadlineWarning} />
+        )}
         <Form.Item name="is_frog" valuePropName="checked">
           <Checkbox>标记为青蛙</Checkbox>
         </Form.Item>
@@ -1380,6 +1382,7 @@ function ProcessModal({
         : mode === "delay"
           ? "推迟处理"
           : "放弃事件";
+  const eventDeadline = toDateString(eventValues.deadline as Dayjs | string | undefined);
   const addActionAfter = (index: number) => {
     const previous = steps[index];
     const nextIndex = index + 1;
@@ -1440,14 +1443,6 @@ function ProcessModal({
       return;
     }
     if (mode === "self") {
-      const eventDeadline = toDateString(eventValues.deadline as Dayjs | string | undefined);
-      const invalidDateIndex = eventDeadline
-        ? steps.findIndex((item) => item.start_date && item.start_date > eventDeadline)
-        : -1;
-      if (invalidDateIndex >= 0) {
-        message.warning("不可晚于截止日期");
-        return;
-      }
       const invalidIndex = steps.findIndex((item) => !item.title?.trim());
       if (invalidIndex >= 0) {
         setValidationError({ index: invalidIndex, field: "title" });
@@ -1606,13 +1601,6 @@ function ProcessModal({
                           format="YYYY-MM-DD"
                           onChange={(value) => {
                             const startDate = value?.format("YYYY-MM-DD") ?? "";
-                            const eventDeadline = toDateString(
-                              eventValues.deadline as Dayjs | string | undefined,
-                            );
-                            if (startDate && eventDeadline && startDate > eventDeadline) {
-                              message.warning("不可晚于截止日期");
-                              return;
-                            }
                             updateStep(index, "start_date", startDate);
                           }}
                         />
@@ -1642,6 +1630,13 @@ function ProcessModal({
                           />
                         )}
                       </div>
+                      {actionDeadlineWarning(item.start_date, eventDeadline) && (
+                        <Alert
+                          type="warning"
+                          showIcon
+                          title={actionDeadlineWarning(item.start_date, eventDeadline)}
+                        />
+                      )}
                       {validationError?.index === index && (
                         <Tag color="error">请填写行动标题。</Tag>
                       )}

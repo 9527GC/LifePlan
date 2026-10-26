@@ -34,13 +34,13 @@ export default function ActionStartDateModal({
   const [cascade, setCascade] = useState(false);
   const [saving, setSaving] = useState(false);
   const newDate = date?.format("YYYY-MM-DD") ?? null;
-  const { delta, canCascade, preview, changes, conflicts, skipped } =
+  const { delta, canCascade, preview, changes, deadlineWarnings, skipped } =
     planStartDateAdjustment(action, following, newDate, cascade);
   const pastCount = preview.filter(
     (item) => item.date && item.date < dayjs().format("YYYY-MM-DD"),
   ).length;
   const save = async () => {
-    if (!touched || !changes.length || conflicts.length) return;
+    if (!touched || !changes.length) return;
     setSaving(true);
     try {
       const updated = await actionsApi.adjustStartDates({
@@ -74,7 +74,7 @@ export default function ActionStartDateModal({
           <Button
             type="primary"
             loading={saving}
-            disabled={!touched || !changes.length || Boolean(conflicts.length)}
+            disabled={!touched || !changes.length}
             onClick={() => void save()}
           >
             {newDate === null && touched ? "确认清空" : "确认调整"}
@@ -163,17 +163,11 @@ export default function ActionStartDateModal({
                 title={`${pastCount} 条行动的开始日期早于今日，将视为已到可开始日期。`}
               />
             )}
-            {conflicts.length > 0 && (
+            {deadlineWarnings.length > 0 && (
               <Alert
-                type="error"
+                type="warning"
                 showIcon
-                title="开始日期不能晚于事件截止日期"
-                description={conflicts
-                  .map(
-                    (item) =>
-                      `${item.action.title}（事件截止 ${item.action.event_deadline}）`,
-                  )
-                  .join("、")}
+                title="开始日期已超过事件截止日期"
               />
             )}
           </>

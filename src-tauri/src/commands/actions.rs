@@ -55,30 +55,7 @@ fn validate(p: &NewAction) -> Result<(), String> {
     }
     Ok(())
 }
-// 截止日期只属于事件，行动的历史截止日期不再参与校验。
-fn validate_event_start_date(
-    conn: &Connection,
-    space: &str,
-    event_id: Option<i64>,
-    start_date: &Option<String>,
-) -> Result<(), String> {
-    if let (Some(event_id), Some(start_date)) = (event_id, start_date) {
-        let deadline: Option<String> = conn
-            .query_row(
-                "SELECT deadline FROM events WHERE id=?1 AND space_id=?2 AND deleted_at IS NULL",
-                params![event_id, space],
-                |row| row.get(0),
-            )
-            .map_err(|e| e.to_string())?;
-        if deadline
-            .as_ref()
-            .is_some_and(|deadline| start_date > deadline)
-        {
-            return Err("行动开始日期不能晚于事件截止日期".into());
-        }
-    }
-    Ok(())
-}
+// 事件截止日期仅用于前端超期提醒，不限制行动开始日期。
 #[tauri::command]
 pub fn get_actions(state: State<'_, AppState>) -> Result<Vec<Action>, String> {
     let c = state.db.lock().map_err(|e| e.to_string())?;
@@ -101,7 +78,6 @@ pub fn create_action(state: State<'_, AppState>, payload: NewAction) -> Result<A
             return Err("只有进行中的事件可以新增行动".into());
         }
     }
-    validate_event_start_date(&c, &space, payload.event_id, &payload.start_date)?;
     let now = now_millis();
     let order: i64 = if let Some(event) = payload.event_id {
         c.query_row("SELECT COALESCE(MAX(sort_order),0)+1 FROM actions WHERE event_id=?1 AND space_id=?2 AND deleted_at IS NULL",params![event,space],|r|r.get(0)).map_err(|e|e.to_string())?
@@ -138,14 +114,6 @@ pub fn update_action(state: State<'_, AppState>, payload: UpdateAction) -> Resul
     if event_status == Some(3) {
         return Err("推迟事件的行动不能编辑".into());
     }
-    let event_id: Option<i64> = c
-        .query_row(
-            "SELECT event_id FROM actions WHERE id=?1 AND space_id=?2 AND deleted_at IS NULL",
-            params![payload.id, space],
-            |row| row.get(0),
-        )
-        .map_err(|e| e.to_string())?;
-    validate_event_start_date(&c, &space, event_id, &payload.start_date)?;
     let n = c.execute("UPDATE actions SET title=?1,description=?2,estimated_hours=?3,start_date=?4,deadline=?5,is_frog=?6,importance=?7,urgency=?8,priority=?9,updated_at=?10 WHERE id=?11 AND space_id=?12 AND deleted_at IS NULL", params![payload.title.trim(), payload.description, payload.estimated_hours, payload.start_date, Option::<String>::None, payload.is_frog, payload.importance, payload.urgency, calculate_priority(payload.importance, payload.urgency), now_millis(), payload.id, space]).map_err(|e| e.to_string())?;
     if n == 0 {
         return Err("行动不存在".into());
@@ -349,13 +317,6 @@ pub fn adjust_action_start_dates(
             if parsed.format("%Y-%m-%d").to_string() != *date {
                 return Err("开始日期格式无效".into());
             }
-            if action
-                .event_deadline
-                .as_ref()
-                .is_some_and(|deadline| date > deadline)
-            {
-                return Err(format!("{}：开始日期不能晚于事件截止日期", action.title));
-            }
         }
     }
     let now = now_millis();
@@ -420,20 +381,14 @@ mod deadline_tests {
             list_actions(&conn).unwrap()[0].event_deadline.as_deref(),
             Some("2026-11-30")
         );
-        let start = Some("2026-11-15".to_owned());
-        assert!(validate_event_start_date(&conn, &space, Some(1), &start).is_ok());
         conn.execute("UPDATE events SET deadline='2026-11-01' WHERE id=1", [])
             .unwrap();
         assert_eq!(
             list_actions(&conn).unwrap()[0].event_deadline.as_deref(),
             Some("2026-11-01")
         );
-        assert!(validate_event_start_date(&conn, &space, Some(1), &start).is_err());
         conn.execute("UPDATE events SET deadline=NULL WHERE id=1", [])
             .unwrap();
         assert!(list_actions(&conn).unwrap()[0].event_deadline.is_none());
-        assert!(validate_event_start_date(&conn, &space, Some(1), &start).is_ok());
-        assert!(validate_event_start_date(&conn, &space, None, &start).is_ok());
-        assert!(validate_event_start_date(&conn, &space, Some(1), &None).is_ok());
     }
 }
