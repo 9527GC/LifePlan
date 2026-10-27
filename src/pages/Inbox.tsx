@@ -50,8 +50,12 @@ import type {
 import { userFacingError } from "@/lib/errors";
 import DatePickerWithWeekday from "@/components/ui/DatePickerWithWeekday";
 import Modal from "@/components/ui/Modal";
+import FrogHelp from "@/components/ui/FrogHelp";
+import HelpTooltip from "@/components/ui/HelpTooltip";
 import { track } from "@/lib/analytics";
 import { actionDeadlineWarning } from "@/lib/actionDeadline";
+import ActionStartDateAdjustmentPreview from "@/components/ui/ActionStartDateAdjustmentPreview";
+import { planStartDateAdjustment } from "@/lib/actionStartDateAdjustment";
 import { sortEventActions } from "@/lib/eventActionSort";
 import { sortByPriority } from "@/lib/prioritySort";
 
@@ -251,7 +255,7 @@ export default function Inbox() {
       });
     }
     if (filter !== "events") return filtered;
-    // 待完成事件优先展示，各组内仍按 P1、P2、P3、P4 排列。
+    // 可直接完成的事件置顶，各组按 P 级排序，同 P 级青蛙优先。
     return sortByPriority(
       filtered.map((event) => ({
         ...event,
@@ -297,6 +301,7 @@ export default function Inbox() {
     deadline?: Dayjs;
     importance?: number;
     urgency?: number;
+    is_frog?: boolean;
   }) => {
     if (!editing) return;
     try {
@@ -307,6 +312,7 @@ export default function Inbox() {
         deadline: toDateString(values.deadline),
         importance: Number(values.importance ?? 1),
         urgency: Number(values.urgency ?? 0),
+        is_frog: values.is_frog ? 1 : 0,
       });
       setEditing(null);
       await load();
@@ -529,6 +535,7 @@ export default function Inbox() {
               deadline: editing.deadline ? dayjs(editing.deadline) : undefined,
               importance: editing.importance ?? 1,
               urgency: editing.urgency ?? 0,
+              is_frog: editing.is_frog === 1,
             }}
             onFinish={(values) => void updateEvent(values)}
           >
@@ -567,7 +574,12 @@ export default function Inbox() {
                 </div>
               </>
             )}
-            <div className="form-footer">
+            <div className="form-footer event-action-footer">
+              {editing.status !== 5 && (
+                <Form.Item name="is_frog" valuePropName="checked" className="event-action-frog">
+                  <Checkbox>标记为青蛙事件 <FrogHelp /></Checkbox>
+                </Form.Item>
+              )}
               <Button onClick={() => setEditing(null)}>取消</Button>
               <Button type="primary" htmlType="submit">
                 保存
@@ -578,6 +590,7 @@ export default function Inbox() {
       </Modal>
       <EventActionModal
         data={editingAction}
+        actions={actions}
         onClose={() => setEditingAction(null)}
         onSaved={async () => {
           setEditingAction(null);
@@ -655,6 +668,16 @@ function EventRow({
   const active = item.status === 0 || item.status === 3;
   const toggle = onToggle;
   const readOnly = item.status === 5;
+  const daysUntilDeadline = item.deadline
+    ? dayjs(item.deadline).startOf("day").diff(dayjs().startOf("day"), "day")
+    : undefined;
+  const deadlineClass = item.status === 1 && daysUntilDeadline !== undefined
+    ? daysUntilDeadline <= 0
+      ? "event-deadline-overdue"
+      : daysUntilDeadline < 5
+        ? "event-deadline-soon"
+        : ""
+    : "";
   if (item.status === 1 || readOnly)
     return (
       <Card
@@ -676,6 +699,7 @@ function EventRow({
               <Typography.Text strong className="event-card-title">
                 <span className="card-index">{index}.</span>
                 {item.title}
+                {item.is_frog === 1 && <Tag color="green">青蛙</Tag>}
               </Typography.Text>
               <Tag
                 className="event-status-tag"
@@ -708,6 +732,12 @@ function EventRow({
                     {item.urgency ? "紧急" : "不紧急"}
                   </span>
                 </span>
+                {item.deadline && (
+                  <span className={`event-deadline ${deadlineClass}`}>{item.deadline} 截止</span>
+                )}
+                {readOnly && item.completed_at != null && (
+                  <span className="event-deadline">{dayjs(item.completed_at).format("YYYY-MM-DD")} 完成</span>
+                )}
               </div>
             </div>
             <Space
@@ -792,6 +822,7 @@ function EventRow({
         <Typography.Text strong className="row-title">
           <span className="card-index">{index}.</span>
           {item.title}
+          {item.is_frog === 1 && <Tag color="green">青蛙</Tag>}
         </Typography.Text>
       }
       extra={
@@ -801,6 +832,7 @@ function EventRow({
       <div className="event-card-body">
         <div className="row-meta">
           <span>{formatCreatedDate(item.created_at)}</span>
+          {item.status === 0 && item.deadline && <span>{item.deadline} 截止</span>}
           {item.delegated_to && <span>委托给 {item.delegated_to}</span>}
           {item.delay_until && <span>推迟至 {item.delay_until}</span>}
           {item.action_count > 0 && (
@@ -1150,11 +1182,6 @@ function EventActionList({
                   {formatCompletedDate(action.completed_at)}
                 </span>
               )}
-              {action.event_deadline && (
-                <span className="action-detail-meta">
-                  事件截止 {action.event_deadline}
-                </span>
-              )}
               {action.description && (
                 <span className="action-detail-meta">{action.description}</span>
               )}
@@ -1234,16 +1261,29 @@ function EventActionList({
 
 function EventActionModal({
   data,
+  actions,
   onClose,
   onSaved,
 }: {
   data: { event: Event; action?: Action } | null;
+  actions: Action[];
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
   const [form] = Form.useForm();
+  const [cascade, setCascade] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [dateTouched, setDateTouched] = useState(false);
+  const [following, setFollowing] = useState<Action[]>([]);
   const selectedStartDate = Form.useWatch("start_date", form) as Dayjs | undefined;
   useEffect(() => {
+    setCascade(false);
+    setDateTouched(false);
+    // 固定打开时的完整事件顺序，日期变更后不重新计算联动范围。
+    const ordered = sortEventActions(actions.filter((item) => item.event_id === data?.event.id));
+    const index = ordered.findIndex((item) => item.id === data?.action?.id);
+    setFollowing(index >= 0 ? ordered.slice(index + 1) : []);
+    form.resetFields();
     form.setFieldsValue(
       data?.action
         ? {
@@ -1260,6 +1300,7 @@ function EventActionModal({
   if (!data) return null;
   const deadlineWarning = actionDeadlineWarning(toDateString(selectedStartDate), data.event.deadline);
   const submit = async (values: Record<string, unknown>) => {
+    if (saving) return;
     const startDate = toDateString(values.start_date as Dayjs | string | undefined);
     const payload = {
       title: values.title as string,
@@ -1267,12 +1308,24 @@ function EventActionModal({
       description: data.action?.description,
       estimated_hours: Number(values.estimated_hours || 0),
       start_date: startDate,
-      is_frog: values.is_frog ? 1 : 0,
+      is_frog: data.action?.status === 1 ? data.action.is_frog : data.event.is_frog,
       importance: data.event.importance ?? 1,
       urgency: data.event.urgency ?? 0,
     };
+    setSaving(true);
     try {
-      if (data.action)
+      if (data.action && dateTouched && data.action.status === 0) {
+        const plan = planStartDateAdjustment(data.action, following, startDate ?? null, cascade);
+        await actionsApi.adjustStartDates({
+          edit: { ...payload, id: data.action.id } as UpdateAction,
+          changes: [
+            { id: data.action.id, expected_updated_at: data.action.updated_at, start_date: startDate ?? null },
+            ...plan.changes.filter((item) => item.action.id !== data.action!.id).map((item) => ({
+              id: item.action.id, expected_updated_at: item.action.updated_at, start_date: item.date,
+            })),
+          ],
+        });
+      } else if (data.action)
         await actionsApi.update({
           ...payload,
           id: data.action.id,
@@ -1282,14 +1335,17 @@ function EventActionModal({
       message.success(data.action ? "行动已更新" : "行动已添加");
     } catch (cause) {
       message.error(userFacingError(cause));
+    } finally {
+      setSaving(false);
     }
   };
   return (
-    <Modal open title={data.action ? "编辑行动" : "添加行动"} onClose={onClose}>
+    <Modal open title={data.action ? "编辑行动" : "添加行动"} onClose={() => { if (!saving) onClose(); }}>
       <Form
         form={form}
         className="form"
         layout="vertical"
+        disabled={saving}
         onFinish={(values) => void submit(values)}
       >
         <Form.Item
@@ -1305,18 +1361,27 @@ function EventActionModal({
             <Select options={hours} />
           </Form.Item>
           <Form.Item name="start_date" label="开始日期（选填）">
-            <DatePickerWithWeekday className="full-width" format="YYYY-MM-DD" />
+            <DatePickerWithWeekday className="full-width" format="YYYY-MM-DD" onChange={() => setDateTouched(true)} />
           </Form.Item>
         </div>
-        {deadlineWarning && (
+        {data.action?.status === 0 && (
+          <ActionStartDateAdjustmentPreview action={data.action} following={following}
+            newDate={toDateString(selectedStartDate) ?? null} touched={dateTouched}
+            cascade={cascade} saving={saving} onCascadeChange={setCascade} />
+        )}
+        {data.action?.status !== 0 && deadlineWarning && (
           <Alert type="warning" showIcon title={deadlineWarning} />
         )}
-        <Form.Item name="is_frog" valuePropName="checked">
-          <Checkbox>标记为青蛙</Checkbox>
-        </Form.Item>
-        <div className="form-footer">
-          <Button onClick={onClose}>取消</Button>
-          <Button type="primary" htmlType="submit">
+        <div className="form-footer event-action-footer">
+          <Tooltip title={data.action && data.action.status !== 0 ? "保留完成时的青蛙标记" : "跟随所属事件，请在事件编辑中修改"}>
+            <span className="event-action-frog">
+              <Checkbox disabled checked={(data.action && data.action.status !== 0 ? data.action.is_frog : data.event.is_frog) === 1}>
+                {data.action && data.action.status !== 0 ? "青蛙标记（完成时）" : "青蛙标记（跟随事件）"}
+              </Checkbox>
+            </span>
+          </Tooltip>
+          <Button disabled={saving} onClick={onClose}>取消</Button>
+          <Button type="primary" htmlType="submit" loading={saving}>
             保存
           </Button>
         </div>
@@ -1349,9 +1414,13 @@ function ProcessModal({
     if (data) {
       const initialEventValues = {
         title: data.event.title,
-        importance: "1",
-        urgency: "0",
+        target: data.event.target,
+        is_frog: data.event.is_frog === 1,
+        deadline: data.event.deadline ? dayjs(data.event.deadline) : undefined,
+        importance: String(data.event.importance ?? 1),
+        urgency: String(data.event.urgency ?? 0),
       };
+      form.resetFields();
       form.setFieldsValue(initialEventValues);
       setEventValues(initialEventValues);
       setSteps([
@@ -1426,6 +1495,7 @@ function ProcessModal({
           event_id: event.id,
           decision: mode,
           quick_complete: true,
+          is_frog: values.is_frog ? 1 : 0,
           title: values.title as string,
           target: values.target as string,
           start_date: toDateString(
@@ -1453,6 +1523,7 @@ function ProcessModal({
     await onSubmit({
       event_id: event.id,
       decision: mode,
+      is_frog: mode === "self" ? (eventValues.is_frog ? 1 : 0) : undefined,
       title: (savedEventValues.title ?? values.title) as string,
       target: (savedEventValues.target ?? values.target) as string,
       start_date: toDateString(
@@ -1710,12 +1781,14 @@ function ProcessModal({
         </div>
         <div className="form-footer">
           {mode === "self" && step === 0 && (
-            <Checkbox
-              checked={quickComplete}
-              onChange={(event) => setQuickComplete(event.target.checked)}
-            >
-              2分钟小事直接完成
-            </Checkbox>
+            <Space wrap className="process-event-options">
+              <Form.Item name="is_frog" valuePropName="checked" style={{ margin: 0 }}>
+                <Checkbox>标记为青蛙事件 <FrogHelp /></Checkbox>
+              </Form.Item>
+              <Checkbox checked={quickComplete} onChange={(event) => setQuickComplete(event.target.checked)}>
+                2分钟小事直接完成 <HelpTooltip label="两分钟小事说明" width={240}>如果经分析事件2分钟即可完成，无需拆解行动，可勾选此项，点击下一步后将立即完成事件。</HelpTooltip>
+              </Checkbox>
+            </Space>
           )}
           <div className="form-footer-actions">
             <Button

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type SVGProps } from "react";
+import { useEffect, useMemo, useRef, useState, type SVGProps, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import dayjs, { type Dayjs } from "dayjs";
 import {
@@ -34,7 +34,7 @@ import {
   CircleHelp,
   MoreHorizontal,
 } from "lucide-react";
-import { actionsApi, dailyReviewApi, dailyScheduleApi, recurringActionsApi } from "@/lib/api";
+import { actionsApi, eventsApi, dailyReviewApi, dailyScheduleApi, recurringActionsApi } from "@/lib/api";
 import type {
   Action,
   DailySchedule,
@@ -491,6 +491,9 @@ export default function DailyList() {
           navigate("/pomodoro");
         }}
         onActionUpdated={(updatedAction) => {
+          setPickerSlot((current) => current?.action_id === updatedAction.id
+            ? { ...current, action: updatedAction } : current);
+
           setActions((current) =>
             current.map((action) =>
               action.id === updatedAction.id ? updatedAction : action,
@@ -1113,30 +1116,42 @@ function ActionPickerModal({
 
   if (!slot) return null;
 
-  const updateFrogStatus = async (checked: boolean) => {
+  const updateFrogStatus = (checked: boolean) => {
     if (!slot.action) return;
-    const previous = frogChecked;
-    setFrogChecked(checked);
-    setFrogSaving(true);
-    try {
-      const action = slot.action;
-      const updated = await actionsApi.update({
-        id: action.id,
-        title: action.title,
-        description: action.description,
-        estimated_hours: action.estimated_hours,
-        start_date: action.start_date,
-        is_frog: checked ? 1 : 0,
-        importance: action.importance,
-        urgency: action.urgency,
+    const action = slot.action;
+    const save = async () => {
+      const previous = frogChecked;
+      setFrogChecked(checked);
+      setFrogSaving(true);
+      try {
+        if (action.event_id != null) {
+          const updated = await eventsApi.setFrog(action.event_id, checked ? 1 : 0);
+          updated.forEach(onActionUpdated);
+          message.success(checked ? "已标记为青蛙事件，并同步未完成行动" : "已取消事件青蛙标记，并同步未完成行动");
+        } else {
+          const updated = await actionsApi.update({
+            id: action.id, title: action.title, description: action.description,
+            estimated_hours: action.estimated_hours, start_date: action.start_date,
+            is_frog: checked ? 1 : 0, importance: action.importance, urgency: action.urgency,
+          });
+          onActionUpdated(updated);
+          message.success(checked ? "已标记为青蛙行动" : "已恢复为普通行动");
+        }
+      } catch (cause) {
+        setFrogChecked(previous);
+        message.error(userFacingError(cause));
+      } finally {
+        setFrogSaving(false);
+      }
+    };
+    if (action.event_id != null) {
+      AntModal.confirm({
+        title: checked ? "标记所属事件为青蛙？" : "取消所属事件的青蛙标记？",
+        content: `将同步修改「${action.event_title || "所属事件"}」及其全部未完成行动，已完成行动保留原标记。`,
+        okText: "确认修改", cancelText: "取消", onOk: save,
       });
-      onActionUpdated(updated);
-      message.success(checked ? "已标记为青蛙行动" : "已恢复为普通行动");
-    } catch (cause) {
-      setFrogChecked(previous);
-      message.error(userFacingError(cause));
-    } finally {
-      setFrogSaving(false);
+    } else {
+      void save();
     }
   };
 
@@ -1315,6 +1330,56 @@ function ActionPickerModal({
     }
   };
 
+  const actionFormButtons = (
+    <Space>
+        {mode !== "new-recurring" && mode !== "edit-recurring" && (
+          <Button onClick={onClose}>取消</Button>
+        )}
+        {mode === "new" && (
+          <Button
+            type="primary"
+            form="daily-new-action-form"
+            htmlType="submit"
+            loading={saving}
+          >
+            创建并安排
+          </Button>
+        )}
+        {(mode === "new-recurring" || mode === "edit-recurring") && (
+          <>
+            {mode === "edit-recurring" && (
+          <Popconfirm
+            title="删除后不可恢复，确认删除吗"
+            onConfirm={() => void deleteRecurring()}
+            okText="删除"
+            cancelText="取消"
+          >
+            <Button danger loading={saving}>
+              删除
+            </Button>
+          </Popconfirm>
+            )}
+            <Button
+          onClick={() => {
+            setEditingRecurringAction(null);
+            setMode("recurring");
+          }}
+            >
+          取消
+            </Button>
+            <Button
+          type="primary"
+          form="daily-new-recurring-action-form"
+          htmlType="submit"
+          loading={saving}
+            >
+          {mode === "edit-recurring" ? "保存修改" : "保存重复行动"}
+            </Button>
+          </>
+        )}
+      </Space>
+  );
+
   if (viewing && slot.action)
     return (
       <AntModal
@@ -1328,10 +1393,10 @@ function ActionPickerModal({
         <div className="form-footer daily-action-detail-footer">
           <Checkbox
             checked={frogChecked}
-            disabled={frogSaving}
+            disabled={frogSaving || slot.action.status !== 0 || slot.action.event_status === 5 || slot.action.event_status === 3}
             onChange={(event) => void updateFrogStatus(event.target.checked)}
           >
-            标记为青蛙 <FrogHelp />
+            {slot.action.event_id != null ? "青蛙事件" : "标记为青蛙"} <FrogHelp />
           </Checkbox>
           <Space>
             <Button onClick={() => setViewing(false)}>更换行动</Button>
@@ -1570,6 +1635,7 @@ function ActionPickerModal({
       )}
       {mode === "new" && (
         <NewActionForm
+          footer={actionFormButtons}
           onSubmit={async (payload) => {
             try {
           const action = await actionsApi.create(payload);
@@ -1582,59 +1648,16 @@ function ActionPickerModal({
       )}
       {(mode === "new-recurring" || mode === "edit-recurring") && (
         <NewRecurringActionForm
+          footer={actionFormButtons}
           action={editingRecurringAction}
           onSubmit={
             mode === "edit-recurring" ? updateRecurring : createRecurring
           }
         />
       )}
-      <div className="form-footer">
-        {mode !== "new-recurring" && mode !== "edit-recurring" && (
-          <Button onClick={onClose}>取消</Button>
-        )}
-        {mode === "new" && (
-          <Button
-            type="primary"
-            form="daily-new-action-form"
-            htmlType="submit"
-            loading={saving}
-          >
-            创建并安排
-          </Button>
-        )}
-        {(mode === "new-recurring" || mode === "edit-recurring") && (
-          <>
-            {mode === "edit-recurring" && (
-          <Popconfirm
-            title="删除后不可恢复，确认删除吗"
-            onConfirm={() => void deleteRecurring()}
-            okText="删除"
-            cancelText="取消"
-          >
-            <Button danger loading={saving}>
-              删除
-            </Button>
-          </Popconfirm>
-            )}
-            <Button
-          onClick={() => {
-            setEditingRecurringAction(null);
-            setMode("recurring");
-          }}
-            >
-          取消
-            </Button>
-            <Button
-          type="primary"
-          form="daily-new-recurring-action-form"
-          htmlType="submit"
-          loading={saving}
-            >
-          {mode === "edit-recurring" ? "保存修改" : "保存重复行动"}
-            </Button>
-          </>
-        )}
-      </div>
+      {(mode === "existing" || mode === "recurring") && (
+        <div className="form-footer">{actionFormButtons}</div>
+      )}
     </AntModal>
   );
 }
@@ -1882,6 +1905,7 @@ function EventActionPicker({
           eventTitle: string;
           actions: Action[];
           priority: number;
+          is_frog: number;
         }>
       >((result, action) => {
         const key =
@@ -1896,6 +1920,7 @@ function EventActionPicker({
             eventTitle: action.event_title || "所属事件",
             actions: [action],
             priority: action.priority,
+            is_frog: action.is_frog,
           });
         return result;
       }, [])
@@ -1933,6 +1958,7 @@ function EventActionPicker({
           </Typography.Text>
           {group.actions[0] && (
             <span className="daily-event-action-parent-tags">
+              {group.actions[0].is_frog === 1 && <Tag color="green">青蛙</Tag>}
               <Tag
                 color={
                   group.actions[0].importance === 1 ? "orange" : "default"
@@ -1972,6 +1998,7 @@ function EventActionPicker({
                   )}
                   hideEventRelation
                   hideEventActionMeta
+                  hideFrog
                 />
               </button>
               <ActionDateMenu disabled={saving} onOpen={() => onAdjustDate(action)} />
@@ -1992,6 +2019,7 @@ function ActionPreview({
   hideEventRelation = false,
   hideEventActionMeta = false,
   hidePendingStatus = false,
+  hideFrog = false,
 }: {
   action: Action;
   index?: number;
@@ -1999,6 +2027,7 @@ function ActionPreview({
   hideEventRelation?: boolean;
   hideEventActionMeta?: boolean;
   hidePendingStatus?: boolean;
+  hideFrog?: boolean;
 }) {
   const relationLabel = action.event_title
     ? `所属事件：${action.event_title}`
@@ -2077,7 +2106,7 @@ function ActionPreview({
         {action.is_delegated_follow_up === 1 && (
           <Tag color="gold">委托跟进</Tag>
         )}
-        {action.is_frog === 1 && <Tag color="green">青蛙</Tag>}
+        {!hideFrog && action.is_frog === 1 && <Tag color="green">青蛙</Tag>}
       </div>
       {!hideEventActionMeta && (action.start_date || action.event_deadline) && (
         <div className="daily-action-preview-dates">
@@ -2157,9 +2186,11 @@ function RecurringActionPreview({
 }
 
 function NewRecurringActionForm({
+  footer,
   action,
   onSubmit,
 }: {
+  footer: ReactNode;
   action: RecurringAction | null;
   onSubmit: (
     payload: NewRecurringAction | UpdateRecurringAction,
@@ -2321,18 +2352,21 @@ function NewRecurringActionForm({
           />
             </Form.Item>
           )}
-      <Form.Item name="is_frog" valuePropName="checked">
-        <Checkbox>
-          标记为青蛙 <FrogHelp />
-        </Checkbox>
-      </Form.Item>
+      <div className="form-footer daily-action-detail-footer">
+        <Form.Item name="is_frog" valuePropName="checked" className="daily-action-frog-field">
+          <Checkbox>标记为青蛙 <FrogHelp /></Checkbox>
+        </Form.Item>
+        {footer}
+      </div>
     </Form>
   );
 }
 
 function NewActionForm({
+  footer,
   onSubmit,
 }: {
+  footer: ReactNode;
   onSubmit: (payload: NewAction) => Promise<void>;
 }) {
   const [form] = Form.useForm();
@@ -2395,11 +2429,12 @@ function NewActionForm({
           />
         </Form.Item>
       </div>
-      <Form.Item name="is_frog" valuePropName="checked">
-        <Checkbox>
-          标记为青蛙 <FrogHelp />
-        </Checkbox>
-      </Form.Item>
+      <div className="form-footer daily-action-detail-footer">
+        <Form.Item name="is_frog" valuePropName="checked" className="daily-action-frog-field">
+          <Checkbox>标记为青蛙 <FrogHelp /></Checkbox>
+        </Form.Item>
+        {footer}
+      </div>
     </Form>
   );
 }

@@ -24,7 +24,9 @@ export interface Event {
   action_count: number;
   pending_action_count: number;
   completed_action_count: number;
+  is_frog: number;
   is_quick_completed: number;
+  completed_at?: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -68,6 +70,7 @@ export interface UpdateEvent {
   deadline?: string;
   importance?: number;
   urgency?: number;
+  is_frog?: number;
 }
 
 export interface ProcessEvent {
@@ -87,6 +90,7 @@ export interface ProcessEvent {
   delay_until?: string;
   delay_note?: string;
   abandon_reason?: string;
+  is_frog?: number;
 }
 
 export interface ProcessActionStep {

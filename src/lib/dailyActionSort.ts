@@ -1,4 +1,5 @@
 import type { Action } from "../types/index.ts";
+import { comparePriorityAndFrog } from "./prioritySort.ts";
 
 export function sortDailyActions(actions: Action[]): Action[] {
   return actions
@@ -18,11 +19,7 @@ export function sortDailyActions(actions: Action[]): Action[] {
         }
       }
 
-      if (left.action.priority !== right.action.priority) {
-        return left.action.priority - right.action.priority;
-      }
-
-      return left.index - right.index;
+      return comparePriorityAndFrog(left.action, right.action) || left.index - right.index;
     })
     .map(({ action }) => action);
 }

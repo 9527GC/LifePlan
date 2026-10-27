@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS events (
     abandon_reason TEXT,
     completion_points_awarded INTEGER NOT NULL DEFAULT 0,
     is_quick_completed INTEGER NOT NULL DEFAULT 0,
+    is_frog INTEGER NOT NULL DEFAULT 0,
+    completed_at INTEGER,
     target TEXT,
     estimated_hours REAL NOT NULL DEFAULT 1,
     start_date TEXT,

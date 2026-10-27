@@ -205,6 +205,7 @@ pub fn run() {
             events::get_events,
             events::create_event,
             events::update_event,
+            events::set_event_frog,
             events::delete_event,
             events::process_event,
             events::complete_event,

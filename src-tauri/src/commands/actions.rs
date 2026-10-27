@@ -78,13 +78,14 @@ pub fn create_action(state: State<'_, AppState>, payload: NewAction) -> Result<A
             return Err("只有进行中的事件可以新增行动".into());
         }
     }
+    let is_frog = inherited_frog(&c, &space, payload.event_id, payload.is_frog)?;
     let now = now_millis();
     let order: i64 = if let Some(event) = payload.event_id {
         c.query_row("SELECT COALESCE(MAX(sort_order),0)+1 FROM actions WHERE event_id=?1 AND space_id=?2 AND deleted_at IS NULL",params![event,space],|r|r.get(0)).map_err(|e|e.to_string())?
     } else {
         0
     };
-    c.execute("INSERT INTO actions (space_id,sync_id,event_id,title,description,estimated_hours,start_date,deadline,is_frog,importance,urgency,priority,sort_order,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?14)",params![space,new_uuid(),payload.event_id,payload.title.trim(),payload.description,payload.estimated_hours,payload.start_date,Option::<String>::None,payload.is_frog,payload.importance,payload.urgency,calculate_priority(payload.importance,payload.urgency),order,now]).map_err(|e|e.to_string())?;
+    c.execute("INSERT INTO actions (space_id,sync_id,event_id,title,description,estimated_hours,start_date,deadline,is_frog,importance,urgency,priority,sort_order,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?14)",params![space,new_uuid(),payload.event_id,payload.title.trim(),payload.description,payload.estimated_hours,payload.start_date,Option::<String>::None,is_frog,payload.importance,payload.urgency,calculate_priority(payload.importance,payload.urgency),order,now]).map_err(|e|e.to_string())?;
     let id = c.last_insert_rowid();
     list_actions(&c)
         .map_err(|e| e.to_string())?
@@ -114,7 +115,8 @@ pub fn update_action(state: State<'_, AppState>, payload: UpdateAction) -> Resul
     if event_status == Some(3) {
         return Err("推迟事件的行动不能编辑".into());
     }
-    let n = c.execute("UPDATE actions SET title=?1,description=?2,estimated_hours=?3,start_date=?4,deadline=?5,is_frog=?6,importance=?7,urgency=?8,priority=?9,updated_at=?10 WHERE id=?11 AND space_id=?12 AND deleted_at IS NULL", params![payload.title.trim(), payload.description, payload.estimated_hours, payload.start_date, Option::<String>::None, payload.is_frog, payload.importance, payload.urgency, calculate_priority(payload.importance, payload.urgency), now_millis(), payload.id, space]).map_err(|e| e.to_string())?;
+    let is_frog = editable_action_frog(&c, &space, payload.id, payload.is_frog)?;
+    let n = c.execute("UPDATE actions SET title=?1,description=?2,estimated_hours=?3,start_date=?4,deadline=?5,is_frog=?6,importance=?7,urgency=?8,priority=?9,updated_at=?10 WHERE id=?11 AND space_id=?12 AND deleted_at IS NULL", params![payload.title.trim(), payload.description, payload.estimated_hours, payload.start_date, Option::<String>::None, is_frog, payload.importance, payload.urgency, calculate_priority(payload.importance, payload.urgency), now_millis(), payload.id, space]).map_err(|e| e.to_string())?;
     if n == 0 {
         return Err("行动不存在".into());
     }
@@ -166,6 +168,7 @@ pub fn restore_action(state: State<'_, AppState>, id: i64) -> Result<Action, Str
     )
     .map_err(|e| e.to_string())?;
     tx.execute("UPDATE events SET status=1,updated_at=?1 WHERE id=?2 AND space_id=?3 AND status=5 AND deleted_at IS NULL", params![now, event_id, space]).map_err(|e| e.to_string())?;
+    super::events::sync_event_frogs(&tx, event_id, &space)?;
     super::events::revoke_event_completion_tx(&tx, event_id, &space)?;
     tx.commit().map_err(|e| e.to_string())?;
     list_actions(&c)
@@ -276,6 +279,7 @@ pub struct StartDateChange {
 #[derive(serde::Deserialize)]
 pub struct AdjustStartDates {
     changes: Vec<StartDateChange>,
+    edit: Option<UpdateAction>,
 }
 
 /// 只修改开始日期，整批校验并在同一事务内保存，避免部分成功或覆盖新修改。
@@ -285,6 +289,21 @@ pub fn adjust_action_start_dates(
     payload: AdjustStartDates,
 ) -> Result<Vec<Action>, String> {
     let mut c = state.db.lock().map_err(|e| e.to_string())?;
+    save_start_date_adjustment(&mut c, payload)
+}
+
+// 编辑行动与联动日期共用事务，任何校验或写入失败都会整批回滚。
+fn save_start_date_adjustment(c: &mut Connection, payload: AdjustStartDates) -> Result<Vec<Action>, String> {
+    if let Some(edit) = &payload.edit {
+        validate(&NewAction {
+            event_id: None, title: edit.title.clone(), description: edit.description.clone(),
+            estimated_hours: edit.estimated_hours, start_date: edit.start_date.clone(),
+            is_frog: edit.is_frog, importance: edit.importance, urgency: edit.urgency,
+        })?;
+        if !payload.changes.iter().any(|change| change.id == edit.id && change.start_date == edit.start_date) {
+            return Err("编辑行动必须包含在日期调整中且日期一致".into());
+        }
+    }
     let tx = c.transaction().map_err(|e| e.to_string())?;
     let space = current_space_id(&tx).map_err(|e| e.to_string())?;
     let actions = list_actions(&tx).map_err(|e| e.to_string())?;
@@ -322,6 +341,10 @@ pub fn adjust_action_start_dates(
     let now = now_millis();
     for change in &payload.changes {
         tx.execute("UPDATE actions SET start_date=?1,updated_at=?2 WHERE id=?3 AND space_id=?4 AND deleted_at IS NULL", params![change.start_date, now, change.id, space]).map_err(|e| e.to_string())?;
+    }
+    if let Some(edit) = &payload.edit {
+        let is_frog = editable_action_frog(&tx, &space, edit.id, edit.is_frog)?;
+        tx.execute("UPDATE actions SET title=?1,description=?2,estimated_hours=?3,is_frog=?4,importance=?5,urgency=?6,priority=?7,updated_at=?8 WHERE id=?9 AND space_id=?10 AND deleted_at IS NULL", params![edit.title.trim(),edit.description,edit.estimated_hours,is_frog,edit.importance,edit.urgency,calculate_priority(edit.importance,edit.urgency),now,edit.id,space]).map_err(|e|e.to_string())?;
     }
     let updated = list_actions(&tx)
         .map_err(|e| e.to_string())?
@@ -390,5 +413,86 @@ mod deadline_tests {
         conn.execute("UPDATE events SET deadline=NULL WHERE id=1", [])
             .unwrap();
         assert!(list_actions(&conn).unwrap()[0].event_deadline.is_none());
+    }
+}
+
+#[cfg(test)]
+mod start_date_edit_tests {
+    use super::*;
+
+    fn setup() -> Connection {
+        let mut c = Connection::open_in_memory().unwrap();
+        c.execute_batch(crate::db::migrations::INIT_MIGRATION).unwrap();
+        let space = crate::db::ensure_current_space(&mut c).unwrap();
+        c.execute("INSERT INTO events (id,space_id,sync_id,title,status,created_at,updated_at) VALUES (1,?1,'event','测试事件',1,1,1)", [&space]).unwrap();
+        for id in 1..=2 {
+            c.execute("INSERT INTO actions (id,space_id,sync_id,event_id,title,start_date,created_at,updated_at) VALUES (?1,?2,?3,1,'原行动','2026-10-27',1,1)", params![id,space,format!("action-{id}")]).unwrap();
+        }
+        c
+    }
+
+    fn payload(expected: i64) -> AdjustStartDates {
+        AdjustStartDates {
+            changes: vec![
+                StartDateChange { id: 1, expected_updated_at: 1, start_date: Some("2026-10-28".into()) },
+                StartDateChange { id: 2, expected_updated_at: expected, start_date: Some("2026-10-28".into()) },
+            ],
+            edit: Some(UpdateAction { id: 1, title: "新行动".into(), description: Some("保留描述".into()), estimated_hours: 0.5, start_date: Some("2026-10-28".into()), is_frog: 1, importance: 1, urgency: 0 }),
+        }
+    }
+
+    #[test]
+    fn 编辑与联动日期一并保存() {
+        let mut c = setup();
+        let updated = save_start_date_adjustment(&mut c, payload(1)).unwrap();
+        assert_eq!(updated.len(), 2);
+        assert!(updated.iter().all(|a| a.start_date.as_deref() == Some("2026-10-28")));
+        let edited = updated.iter().find(|a| a.id == 1).unwrap();
+        assert_eq!(edited.title, "新行动");
+        assert_eq!(edited.estimated_hours, 0.5);
+        assert_eq!(edited.is_frog, 0);
+        assert_eq!(edited.description.as_deref(), Some("保留描述"));
+    }
+
+    #[test]
+    fn 后续行动冲突时编辑与日期均不保存() {
+        let mut c = setup();
+        assert!(save_start_date_adjustment(&mut c, payload(2)).is_err());
+        let actions = list_actions(&c).unwrap();
+        assert!(actions.iter().all(|a| a.title == "原行动" && a.start_date.as_deref() == Some("2026-10-27") && a.updated_at == 1));
+    }
+}
+
+fn inherited_frog(conn: &Connection, space: &str, event_id: Option<i64>, independent: i32) -> Result<i32,String> {
+    if let Some(event_id) = event_id {
+        conn.query_row("SELECT is_frog FROM events WHERE id=?1 AND space_id=?2 AND deleted_at IS NULL",params![event_id,space],|r|r.get(0)).map_err(|e|e.to_string())
+    } else if [0,1].contains(&independent) { Ok(independent) } else { Err("青蛙标记无效".into()) }
+}
+
+fn editable_action_frog(conn: &Connection, space: &str, id: i64, independent: i32) -> Result<i32,String> {
+    let (event_id,status,snapshot): (Option<i64>,i32,i32) = conn.query_row("SELECT event_id,status,is_frog FROM actions WHERE id=?1 AND space_id=?2 AND deleted_at IS NULL",params![id,space],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(|e|e.to_string())?;
+    if event_id.is_some() && status != 0 { return Ok(snapshot); }
+    inherited_frog(conn,space,event_id,independent)
+}
+
+#[cfg(test)]
+mod frog_inheritance_tests {
+    use super::*;
+
+    #[test]
+    fn 事件行动忽略单独修改而独立行动保持可编辑() {
+        let mut c = Connection::open_in_memory().unwrap();
+        c.execute_batch(crate::db::migrations::INIT_MIGRATION).unwrap();
+        let space = crate::db::ensure_current_space(&mut c).unwrap();
+        c.execute("INSERT INTO events(id,space_id,sync_id,title,status,is_frog,created_at,updated_at) VALUES(1,?1,'event','事件',1,1,1,1)",[&space]).unwrap();
+        assert_eq!(inherited_frog(&c,&space,Some(1),0).unwrap(),1);
+        assert_eq!(inherited_frog(&c,&space,None,0).unwrap(),0);
+        assert_eq!(inherited_frog(&c,&space,None,1).unwrap(),1);
+        for (id,event,status) in [(1,Some(1),0),(2,Some(1),1),(3,None,0)] {
+            c.execute("INSERT INTO actions(id,space_id,sync_id,event_id,title,status,is_frog,created_at,updated_at) VALUES(?1,?2,?3,?4,'行动',?5,0,1,1)",params![id,space,format!("action-{id}"),event,status]).unwrap();
+        }
+        assert_eq!(editable_action_frog(&c,&space,1,0).unwrap(),1);
+        assert_eq!(editable_action_frog(&c,&space,2,1).unwrap(),0);
+        assert_eq!(editable_action_frog(&c,&space,3,1).unwrap(),1);
     }
 }

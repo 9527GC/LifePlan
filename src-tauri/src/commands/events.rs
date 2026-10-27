@@ -27,6 +27,8 @@ fn row_to_event(row: &rusqlite::Row) -> rusqlite::Result<Event> {
         is_quick_completed: row.get(17)?,
         created_at: row.get(18)?,
         updated_at: row.get(19)?,
+        completed_at: row.get(20)?,
+        is_frog: row.get(21)?,
     })
 }
 
@@ -97,6 +99,7 @@ pub(crate) fn award_event_completion_tx(
     space_id: &str,
     completed_action_count: i64,
 ) -> Result<i64, String> {
+    tx.execute("UPDATE events SET completed_at=COALESCE(completed_at,?1) WHERE id=?2 AND space_id=?3 AND status=5 AND deleted_at IS NULL", params![now_millis(),event_id,space_id]).map_err(|e| e.to_string())?;
     let already: i64 = tx
         .query_row(
             "SELECT completion_points_awarded FROM events WHERE id = ?1 AND space_id = ?2 AND deleted_at IS NULL",
@@ -134,6 +137,7 @@ pub(crate) fn revoke_event_completion_tx(
     event_id: i64,
     space_id: &str,
 ) -> Result<i64, String> {
+    tx.execute("UPDATE events SET completed_at=NULL WHERE id=?1 AND space_id=?2 AND deleted_at IS NULL", params![event_id,space_id]).map_err(|e| e.to_string())?;
     let already: i64 = tx
         .query_row(
             "SELECT completion_points_awarded FROM events WHERE id = ?1 AND space_id = ?2 AND deleted_at IS NULL",
@@ -172,7 +176,7 @@ pub fn list_events(conn: &Connection) -> rusqlite::Result<Vec<Event>> {
                  e.importance, e.urgency, COUNT(a.id),
                 COALESCE(SUM(CASE WHEN a.status = 0 THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN a.status = 1 THEN 1 ELSE 0 END), 0),
-                e.is_quick_completed, e.created_at, e.updated_at
+                e.is_quick_completed, e.created_at, e.updated_at, e.completed_at, e.is_frog
          FROM events e
          LEFT JOIN actions a ON a.space_id = e.space_id AND a.deleted_at IS NULL
                               AND a.event_id = e.id
@@ -246,6 +250,9 @@ pub fn update_event(state: State<'_, AppState>, payload: UpdateEvent) -> Result<
         )
         .map_err(|error| error.to_string())?;
     } else {
+        if let Some(is_frog) = payload.is_frog {
+            set_event_frog_tx(&tx, payload.id, &space_id, is_frog)?;
+        }
         let importance = payload.importance.unwrap_or(1);
         let urgency = payload.urgency.unwrap_or(1);
         if ![0, 1].contains(&importance) || ![0, 1].contains(&urgency) {
@@ -297,6 +304,9 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
         return Err("当前事件不能重复处理".into());
     }
 
+    if let Some(is_frog) = payload.is_frog {
+        set_event_frog_tx(&tx, payload.event_id, &space_id, is_frog)?;
+    }
     let timestamp = now_millis();
     match payload.decision.as_str() {
         "self" => {
@@ -404,6 +414,7 @@ pub fn process_event(state: State<'_, AppState>, payload: ProcessEvent) -> Resul
         )?,
         _ => return Err("不支持的事件处理方式".into()),
     }
+    sync_event_frogs(&tx, payload.event_id, &space_id)?;
     tx.commit().map_err(|error| error.to_string())
 }
 
@@ -519,6 +530,7 @@ pub fn restore_event(state: State<'_, AppState>, event_id: i64) -> Result<(), St
         params![timestamp, event_id, space_id],
     )
     .map_err(|error| error.to_string())?;
+    sync_event_frogs(&tx, event_id, &space_id)?;
     tx.commit().map_err(|error| error.to_string())
 }
 
@@ -678,5 +690,59 @@ mod delay_tests {
         ] {
             assert!(validate_delay_date(Some(date), "2026-10-09 18:00:00").is_err());
         }
+    }
+}
+
+/// 仅同步未完成行动；已完成行动保留完成时的标签。
+pub(crate) fn sync_event_frogs(conn: &Connection, event_id: i64, space: &str) -> Result<(), String> {
+    conn.execute("UPDATE actions SET is_frog=(SELECT is_frog FROM events WHERE id=?1 AND space_id=?2 AND deleted_at IS NULL),updated_at=?3 WHERE event_id=?1 AND space_id=?2 AND deleted_at IS NULL AND status=0 AND is_frog<>(SELECT is_frog FROM events WHERE id=?1 AND space_id=?2 AND deleted_at IS NULL)", params![event_id,space,now_millis()]).map_err(|e|e.to_string())?;
+    Ok(())
+}
+
+fn set_event_frog_tx(conn: &Connection, event_id: i64, space: &str, is_frog: i32) -> Result<(), String> {
+    if ![0,1].contains(&is_frog) { return Err("青蛙标记无效".into()); }
+    let n = conn.execute("UPDATE events SET is_frog=?1,updated_at=?2 WHERE id=?3 AND space_id=?4 AND deleted_at IS NULL AND status<>5",params![is_frog,now_millis(),event_id,space]).map_err(|e|e.to_string())?;
+    if n == 0 { return Err("事件不存在或已完成，不能修改青蛙标记".into()); }
+    sync_event_frogs(conn,event_id,space)
+}
+
+#[tauri::command]
+pub fn set_event_frog(state: State<'_, AppState>, event_id: i64, is_frog: i32) -> Result<Vec<crate::models::Action>, String> {
+    let mut conn = state.db.lock().map_err(|e|e.to_string())?;
+    let tx = conn.transaction().map_err(|e|e.to_string())?;
+    let space = current_space_id(&tx).map_err(|e|e.to_string())?;
+    set_event_frog_tx(&tx,event_id,&space,is_frog)?;
+    let updated = super::actions::list_actions(&tx).map_err(|e|e.to_string())?.into_iter().filter(|a|a.event_id==Some(event_id)).collect();
+    tx.commit().map_err(|e|e.to_string())?;
+    Ok(updated)
+}
+
+#[cfg(test)]
+mod frog_tests {
+    use super::*;
+
+    #[test]
+    fn 事件青蛙同步未完成行动且保留历史与独立行动() {
+        let mut c = Connection::open_in_memory().unwrap();
+        c.execute_batch(crate::db::migrations::INIT_MIGRATION).unwrap();
+        let space = crate::db::ensure_current_space(&mut c).unwrap();
+        c.execute("INSERT INTO events(id,space_id,sync_id,title,status,created_at,updated_at) VALUES(1,?1,'event','事件',1,1,1)",[&space]).unwrap();
+        for (id,event,status) in [(1,Some(1),0),(2,Some(1),1),(3,None,0),(4,Some(1),2)] {
+            c.execute("INSERT INTO actions(id,space_id,sync_id,event_id,title,status,is_frog,created_at,updated_at) VALUES(?1,?2,?3,?4,'行动',?5,0,1,1)",params![id,space,format!("action-{id}"),event,status]).unwrap();
+        }
+        let tx = c.transaction().unwrap();
+        set_event_frog_tx(&tx,1,&space,1).unwrap();
+        let flags = || super::super::actions::list_actions(&tx).unwrap().into_iter().map(|a|(a.id,a.is_frog)).collect::<std::collections::BTreeMap<_,_>>();
+        assert_eq!(flags(), [(1,1),(2,0),(3,0),(4,0)].into_iter().collect());
+        // 已完成行动恢复后重新继承事件。
+        tx.execute("UPDATE actions SET status=0 WHERE id=2",[]).unwrap();
+        sync_event_frogs(&tx,1,&space).unwrap();
+        assert_eq!(flags().get(&2),Some(&1));
+        set_event_frog_tx(&tx,1,&space,0).unwrap();
+        assert!(flags().values().all(|v| *v==0));
+        assert!(set_event_frog_tx(&tx,1,&space,2).is_err());
+        tx.execute("UPDATE events SET status=5 WHERE id=1",[]).unwrap();
+        assert!(set_event_frog_tx(&tx,1,&space,1).is_err());
+        assert!(set_event_frog_tx(&tx,99,&space,1).is_err());
     }
 }

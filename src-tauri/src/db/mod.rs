@@ -118,7 +118,32 @@ pub fn run_migrations(conn: &mut Connection) -> Result<bool, DbError> {
     // 全新建库和部分旧版本升级会提前返回，统一补齐工作日志等复盘表。
     ensure_daily_review_schema(conn)?;
     crate::commands::points::ensure_schema(conn).map_err(|e| DbError::MigrationFailed(e.to_string()))?;
+    ensure_event_completion_schema(conn)?;
+    ensure_event_frog_schema(conn)?;
     Ok(initialized)
+}
+
+// 旧版行动青蛙提升到所属事件；已完成行动保留历史，独立行动不受影响。
+fn ensure_event_frog_schema(conn: &mut Connection) -> Result<(), DbError> {
+    if column_exists(conn, "events", "is_frog")? { return Ok(()); }
+    let tx = conn.transaction().map_err(|e| DbError::MigrationFailed(e.to_string()))?;
+    tx.execute_batch("ALTER TABLE events ADD COLUMN is_frog INTEGER NOT NULL DEFAULT 0;
+        UPDATE events SET is_frog=1 WHERE EXISTS (SELECT 1 FROM actions a WHERE a.event_id=events.id AND a.space_id=events.space_id AND a.deleted_at IS NULL AND a.status=0 AND a.is_frog=1);
+        UPDATE actions SET is_frog=COALESCE((SELECT e.is_frog FROM events e WHERE e.id=actions.event_id AND e.space_id=actions.space_id AND e.deleted_at IS NULL),is_frog) WHERE event_id IS NOT NULL AND status=0 AND deleted_at IS NULL;")
+        .map_err(|e| DbError::MigrationFailed(e.to_string()))?;
+    tx.commit().map_err(|e| DbError::MigrationFailed(e.to_string()))
+}
+
+// 独立保存完成时间，避免编辑已完成事件后改变完成日期。
+fn ensure_event_completion_schema(conn: &Connection) -> Result<(), DbError> {
+    if !column_exists(conn, "events", "completed_at")? {
+        conn.execute_batch("ALTER TABLE events ADD COLUMN completed_at INTEGER;")
+            .map_err(|e| DbError::MigrationFailed(e.to_string()))?;
+    }
+    // 优先使用最近一次完成积分记录；缺少历史记录时只能用原更新时间补齐。
+    conn.execute_batch("UPDATE events SET completed_at = COALESCE((SELECT MAX(occurred_at) FROM points_ledger p WHERE p.space_id=events.space_id AND p.source_id=events.id AND p.kind='event'), updated_at) WHERE status=5 AND completed_at IS NULL;")
+        .map_err(|e| DbError::MigrationFailed(e.to_string()))?;
+    Ok(())
 }
 
 fn run_base_migrations(conn: &mut Connection) -> Result<bool, DbError> {
@@ -819,5 +844,52 @@ mod tests {
         // 再次迁移不能改变存量模板或重复添加字段。
         run_migrations(&mut conn).expect("重复迁移失败");
         validate_current_schema(&conn).expect("验证升级后的数据库结构失败");
+    }
+}
+
+#[cfg(test)]
+mod event_completion_tests {
+    use super::*;
+
+    #[test]
+    fn 完成时间兼容旧库且补齐后不随编辑变化() {
+        let mut c = Connection::open_in_memory().unwrap();
+        run_migrations(&mut c).unwrap();
+        let space = ensure_current_space(&mut c).unwrap();
+        c.execute_batch("ALTER TABLE events DROP COLUMN completed_at;").unwrap();
+        for id in 1..=3 {
+            c.execute("INSERT INTO events(id,space_id,sync_id,title,status,created_at,updated_at) VALUES (?1,?2,?3,'历史事件',?4,1,100)", params![id,space,format!("event-{id}"),if id == 3 {1} else {5}]).unwrap();
+        }
+        c.execute("INSERT INTO points_ledger(space_id,kind,content,amount,occurred_at,source_id) VALUES (?1,'event','完成',5,80,1)", [&space]).unwrap();
+        ensure_event_completion_schema(&c).unwrap();
+        let dates = || c.prepare("SELECT completed_at FROM events ORDER BY id").unwrap().query_map([], |r| r.get::<_,Option<i64>>(0)).unwrap().collect::<Result<Vec<_>,_>>().unwrap();
+        assert_eq!(dates(), vec![Some(80),Some(100),None]);
+        c.execute("UPDATE events SET updated_at=200", []).unwrap();
+        ensure_event_completion_schema(&c).unwrap();
+        assert_eq!(dates(), vec![Some(80),Some(100),None]);
+    }
+}
+
+#[cfg(test)]
+mod event_frog_tests {
+    use super::*;
+
+    #[test]
+    fn 旧青蛙提升到事件且迁移不反复覆盖标签() {
+        let mut c = Connection::open_in_memory().unwrap();
+        run_migrations(&mut c).unwrap();
+        let space = ensure_current_space(&mut c).unwrap();
+        c.execute_batch("ALTER TABLE events DROP COLUMN is_frog;").unwrap();
+        c.execute("INSERT INTO events(id,space_id,sync_id,title,status,created_at,updated_at) VALUES(1,?1,'event','事件',1,1,1)",[&space]).unwrap();
+        for (id,event,status,frog) in [(1,Some(1),0,1),(2,Some(1),0,0),(3,Some(1),1,0),(4,None,0,1)] {
+            c.execute("INSERT INTO actions(id,space_id,sync_id,event_id,title,status,is_frog,created_at,updated_at) VALUES(?1,?2,?3,?4,'行动',?5,?6,1,1)",params![id,space,format!("action-{id}"),event,status,frog]).unwrap();
+        }
+        ensure_event_frog_schema(&mut c).unwrap();
+        assert_eq!(c.query_row::<i32,_,_>("SELECT is_frog FROM events WHERE id=1",[],|r|r.get(0)).unwrap(),1);
+        let flags: Vec<i32> = c.prepare("SELECT is_frog FROM actions ORDER BY id").unwrap().query_map([],|r|r.get(0)).unwrap().collect::<Result<_,_>>().unwrap();
+        assert_eq!(flags,vec![1,1,0,1]);
+        c.execute_batch("UPDATE events SET is_frog=0; UPDATE actions SET is_frog=0 WHERE event_id=1 AND status=0;").unwrap();
+        ensure_event_frog_schema(&mut c).unwrap();
+        assert_eq!(c.query_row::<i32,_,_>("SELECT is_frog FROM events WHERE id=1",[],|r|r.get(0)).unwrap(),0);
     }
 }

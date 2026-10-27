@@ -25,7 +25,9 @@ pub struct Event {
     pub action_count: i64,
     pub pending_action_count: i64,
     pub completed_action_count: i64,
+    pub is_frog: i32,
     pub is_quick_completed: i32,
+    pub completed_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -43,6 +45,7 @@ pub struct UpdateEvent {
     pub deadline: Option<String>,
     pub importance: Option<i32>,
     pub urgency: Option<i32>,
+    pub is_frog: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +66,7 @@ pub struct ProcessEvent {
     pub delay_until: Option<String>,
     pub delay_note: Option<String>,
     pub abandon_reason: Option<String>,
+    pub is_frog: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

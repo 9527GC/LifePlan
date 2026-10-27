@@ -117,6 +117,22 @@ mod tests {
         );
     }
     #[test]
+    fn 完成时间保持稳定且恢复后重新记录() {
+        let mut conn = database();
+        let tx = conn.transaction().unwrap();
+        tx.execute("UPDATE events SET status=5", []).unwrap();
+        super::super::events::award_event_completion_tx(&tx, 1, "test", 0).unwrap();
+        let completed: i64 = tx.query_row("SELECT completed_at FROM events WHERE id=1", [], |r| r.get(0)).unwrap();
+        tx.execute("UPDATE events SET updated_at=1,title='编辑标题'", []).unwrap();
+        super::super::events::award_event_completion_tx(&tx, 1, "test", 0).unwrap();
+        assert_eq!(tx.query_row::<i64,_,_>("SELECT completed_at FROM events WHERE id=1", [], |r| r.get(0)).unwrap(),completed);
+        super::super::events::revoke_event_completion_tx(&tx, 1, "test").unwrap();
+        assert!(tx.query_row::<Option<i64>,_,_>("SELECT completed_at FROM events WHERE id=1", [], |r| r.get(0)).unwrap().is_none());
+        super::super::events::award_event_completion_tx(&tx, 1, "test", 0).unwrap();
+        assert!(tx.query_row::<i64,_,_>("SELECT completed_at FROM events WHERE id=1", [], |r| r.get(0)).unwrap() >= completed);
+    }
+
+    #[test]
     fn 事件奖励幂等且撤回记录实际扣除值() {
         let mut conn = database();
         let tx = conn.transaction().unwrap();

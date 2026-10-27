@@ -1148,8 +1148,8 @@ body.pomodoro-floating-mode .app-shell {
 .frog-tooltip-popup .ant-tooltip,
 .frog-tooltip-popup .ant-tooltip-container,
 .frog-tooltip-popup .ant-tooltip-inner {
-  width: min(480px, calc(100vw - 32px)) !important;
-  max-width: min(480px, calc(100vw - 32px)) !important;
+  width: min(var(--help-tooltip-width, 480px), calc(100vw - 32px)) !important;
+  max-width: min(var(--help-tooltip-width, 480px), calc(100vw - 32px)) !important;
 }
 .decision-tooltip-popup,
 .decision-tooltip-popup .ant-tooltip,
@@ -1224,6 +1224,12 @@ body.pomodoro-floating-mode .app-shell {
 .daily-action-detail-footer {
   justify-content: space-between;
   align-items: center;
+}
+.event-action-footer {
+  align-items: center;
+}
+.event-action-footer .event-action-frog {
+  margin: 0 auto 0 0;
 }
 .process-steps {
   margin: 0 0 22px;
@@ -1301,10 +1307,23 @@ body.pomodoro-floating-mode .app-shell {
 }
 .event-card-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
   gap: 16px;
   min-width: 0;
+}
+.event-deadline {
+  color: #909399;
+  font-size: 14px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.event-deadline-soon {
+  color: #fa8c16;
+}
+.event-deadline-overdue {
+  color: #ff4d4f;
 }
 .event-priority-group {
   display: inline-flex;
@@ -7247,3 +7266,12 @@ body.pomodoro-floating-mode .pomodoro-completion-actions .ant-btn {
 .compact-date-input [role="alert"] { display: block; margin-top: 4px; color: #ff4d4f; font-size: 12px; }
 .compact-date-calendar { min-height: 0; overflow: auto; }
 .compact-date-calendar .ant-picker-calendar-header { flex-wrap: wrap; gap: 4px; }
+
+.process-action-modal .process-event-options {
+  margin-right: auto;
+  min-width: 0;
+}
+
+.daily-new-action-form .daily-action-frog-field {
+  margin-bottom: 0;
+}

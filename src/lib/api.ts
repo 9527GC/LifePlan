@@ -22,6 +22,7 @@ export const systemApi = {
 };
 
 export const eventsApi = {
+  setFrog: (eventId: number, isFrog: number) => invokeCommand<Action[]>("set_event_frog", { eventId, isFrog }),
   checkDueDelays: () => invokeCommand<boolean>("check_due_delays"),
   list: () => invokeCommand<Event[]>("get_events"),
   create: (payload: NewEvent) => invokeCommand<Event>("create_event", { payload }),
@@ -35,7 +36,7 @@ export const eventsApi = {
 
 export const actionsApi = {
   scheduledStartDates: (actionIds: number[]) => invokeCommand<Array<{ action_id: number; first_date: string }>>("get_action_scheduled_start_dates", { actionIds }),
-  adjustStartDates: (payload: { changes: Array<{ id: number; expected_updated_at: number; start_date: string | null }> }) => invokeCommand<Action[]>("adjust_action_start_dates", { payload }),
+  adjustStartDates: (payload: { edit?: UpdateAction; changes: Array<{ id: number; expected_updated_at: number; start_date: string | null }> }) => invokeCommand<Action[]>("adjust_action_start_dates", { payload }),
   list: () => invokeCommand<Action[]>("get_actions"),
   create: (payload: NewAction) => invokeCommand<Action>("create_action", { payload }),
   update: (payload: UpdateAction) => invokeCommand<Action>("update_action", { payload }),
