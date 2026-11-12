@@ -233,6 +233,30 @@ export default function Inbox() {
     );
     navigate(location.pathname, { replace: true, state: null });
   }, [location.pathname, location.state, navigate]);
+  useEffect(() => {
+    const state = location.state as { focusEventId?: number } | null;
+    const eventId = state?.focusEventId;
+    // 数据成功加载后再消费定位请求，避免加载失败时误报事件不存在。
+    if (eventId == null || loading || error) return;
+    const target = events.find((event) => event.id === eventId);
+    if (!target || target.status !== 1) {
+      setFilter("events");
+      messageApi.warning(target ? `该事件已变为“${statusLabels[target.status]}”，请在对应标签中查看` : "该事件已不存在");
+      navigate(location.pathname, { replace: true, state: null });
+      return;
+    }
+    setFilter("events");
+    if (!expandedEventIds.has(eventId)) {
+      setExpandedEventIds((current) => new Set([...current, eventId]));
+      return;
+    }
+    // 等待进行中列表与展开内容渲染完成后，再滚动到事件卡片。
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(`inbox-event-${eventId}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+      navigate(location.pathname, { replace: true, state: null });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [loading, error, events, expandedEventIds, filter, location.pathname, location.state, navigate, messageApi]);
   const visibleEvents = useMemo(() => {
     const status: Record<InboxTab, number> = {
       pending: 0,
@@ -681,6 +705,7 @@ function EventRow({
   if (item.status === 1 || readOnly)
     return (
       <Card
+        id={`inbox-event-${item.id}`}
         className="record-card event-card event-card-clickable"
         size="small"
         onClick={(event) => {

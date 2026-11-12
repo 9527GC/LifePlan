@@ -1526,7 +1526,7 @@ function ActionPickerModal({
                   )}
                 />
               </button>
-              <ActionDateMenu disabled={saving} onOpen={() => openDateAdjustment(action)} />
+              <ActionDateMenu action={action} disabled={saving} onOpen={() => openDateAdjustment(action)} />
               </div>
             ))
           ) : (
@@ -2001,7 +2001,7 @@ function EventActionPicker({
                   hideFrog
                 />
               </button>
-              <ActionDateMenu disabled={saving} onOpen={() => onAdjustDate(action)} />
+              <ActionDateMenu action={action} disabled={saving} onOpen={() => onAdjustDate(action)} />
               </div>
             ))}
           </div>
@@ -2439,8 +2439,21 @@ function NewActionForm({
   );
 }
 
-function ActionDateMenu({ disabled, onOpen }: { disabled: boolean; onOpen: () => void }) {
-  return <Dropdown trigger={["click"]} menu={{ items: [{ key: "date", label: "调整开始日期", icon: <CalendarDays size={14} /> }], onClick: onOpen }}>
+function ActionDateMenu({ action, disabled, onOpen }: { action: Action; disabled: boolean; onOpen: () => void }) {
+  const navigate = useNavigate();
+  return <Dropdown trigger={["click"]} menu={{
+    items: [
+      { key: "date", label: "调整开始日期", icon: <CalendarDays size={14} /> },
+      ...(action.event_id != null ? [{ key: "event", label: "编辑事件行动", icon: <Pencil size={14} /> }] : []),
+    ],
+    onClick: ({ key }) => {
+      if (key === "event") {
+        navigate("/inbox", { state: { focusEventId: action.event_id } });
+      } else {
+        onOpen();
+      }
+    },
+  }}>
     <Button className="daily-action-date-menu" type="text" size="small" disabled={disabled} icon={<MoreHorizontal size={18} />} aria-label="行动更多操作" />
   </Dropdown>;
 }
