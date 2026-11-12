@@ -1,6 +1,12 @@
 name: 发布 LifePlan
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 要重新发布的已有版本标签
+        required: true
+        type: string
   push:
     tags:
       - "v*"
@@ -8,8 +14,11 @@ on:
 permissions:
   contents: write
 
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
 concurrency:
-  group: lifeplan-release-${{ github.ref_name }}
+  group: lifeplan-release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -25,7 +34,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.ref }}
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: 设置 Node.js
         uses: actions/setup-node@v4
@@ -35,7 +44,7 @@ jobs:
       - name: 生成发布上下文
         id: context
         env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_REF_NAME: ${{ env.RELEASE_TAG }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           node scripts/release/prepare-release.mjs \
@@ -71,12 +80,12 @@ jobs:
             args: "--bundles nsis"
             artifact_name: release-windows-x64
           - platform: macOS Apple Silicon
-            runner: macos-14
+            runner: macos-15
             rust_target: aarch64-apple-darwin
             args: "--target aarch64-apple-darwin"
             artifact_name: release-macos-arm64
           - platform: macOS Intel
-            runner: macos-14
+            runner: macos-15-intel
             rust_target: x86_64-apple-darwin
             args: "--target x86_64-apple-darwin"
             artifact_name: release-macos-x64
@@ -84,7 +93,7 @@ jobs:
       - name: 检出标签代码
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: 设置 Node.js
         uses: actions/setup-node@v4
@@ -183,7 +192,7 @@ jobs:
       - name: 检出发布脚本
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: 下载发布上下文
         uses: actions/download-artifact@v4
